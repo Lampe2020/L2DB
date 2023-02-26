@@ -284,21 +284,24 @@ expected one of {self.supported_index_types}!")
                     return helpers['bstr_from_str'](repr(obj)) if self.metadata['RAW_VALUES'] \
                         else b'str\x00' + helpers['bstr_from_str'](repr(obj))  # ...just represent it as a string
 
-        # Valtable+Body
+        # Valtable+Body #FIXME: somewhere in this loop is an unwanted write to the database which destroys it more and more with each iteration...
         for key in self.db:
-            # Note that non-string keys will be stored as string keys! 
+            # Note that non-string keys will be stored as string keys!
             match self.metadata['DB_INDEX_TYPE']:
                 case 1:
+                    body_segment = to_bytes(self.db[key])
                     valtable += (helpers['bstr_from_int'](len(body), unsigned=True) \
-                                 + helpers['bstr_from_int'](len(body_segment := to_bytes(self.db[key])) + len(body),
-                                                            unsigned=True)
+                                 + helpers['bstr_from_int'](len(body_segment) + len(body), unsigned=True) \
                                  + helpers['bstr_from_str'](str(key)) + b'\x00')
-                    body += body_segment
+                    # print(f'DB_INDEX_TYPE: 1, body len: {len(body)}, body_segment len: {len(body_segment)}, valtable: {valtable}, key: {key}, self.db[key]: {repr(self.db[key])}, body_segment: {body_segment}') #debug
                 case 2:
-                    valtable += (helpers['bstr_from_long'](len(body), unsigned=True) + helpers['bstr_from_str'](
-                        str(key)) + b'\x00')
-                    body += to_bytes(self.db[key])
-        self.update_metadata('VALTABLE_LEN', len(valtable))
+                    valtable += (helpers['bstr_from_long'](len(body), unsigned=True)
+                                 + helpers['bstr_from_str'](str(key)) + b'\x00')
+                    body_segment = to_bytes(self.db[key])
+                    # print(f'DB_INDEX_TYPE: 2, body len: {len(body)}, body_segment len: {len(body_segment)}, valtable: {valtable}, key: {key}, self.db[key]: {repr(self.db[key])}, body_segment: {body_segment}') #debug
+            body += body_segment
+        print(self.db)  # debug
+        self.update_metadata('VALTABLE_LEN', len(valtable))  # This line seems to cause the above writes, several times inthe loop even though it's outside...
 
         # Metadata
         metadata = list(self.magic) + [0 for x in range(64 - len(self.magic))]
