@@ -41,7 +41,7 @@ class L2DB:
         self.strict = not ign_corrupted_source
         self.db = None
         # Default metadata, only kept when L2DB created from dict:
-        self.metadata = {'VER': self.implementation_version, 'VALTABLE_LEN': 0, 'DB_INDEX_TYPE': 1, 'RAW_VALUES': False}
+        self.metadata = {'VER': self.implementation_version, 'VALTABLE_LEN': 0, 'DB_INDEX_TYPE': 2, 'RAW_VALUES': False}
         self.valtable = {}
         self.database = {}
         if type(source) == bytes:
@@ -236,12 +236,10 @@ expected one of {self.supported_index_types}!")
                             self.db[key] = ''.join([chr(b) for b in self.db[key].split(b'\x00', 1)[1]])
                         case b'bool':
                             self.db[key] = not not self.db[key].split(b'\x00', 1)[1][
-                                0]  # Invert 2 times to get a boolean
-                            # from the byte's integer value
+                                0]  # Invert 2 times to get a boolean from the byte's integer value
                         case req_type if req_type in (b'', b'bstr', b'bytes'):
                             self.db[key] = self.db[key].split(b'\x00', 1)[
-                                1]  # Just cut away the leading null-byte to not
-                            # destroy the actual value
+                                1]  # Just cut away the leading null-byte to not destroy the actual value
                 except Exception as e:
                     print(f"Couldn't assign type to entry '{key}' because of a {type(e).__name__}: {e}")
 
@@ -257,6 +255,8 @@ expected one of {self.supported_index_types}!")
                 case '':  # str
                     return helpers['bstr_from_str'](obj) if self.metadata['RAW_VALUES'] \
                         else b'str\x00' + helpers['bstr_from_str'](obj)
+                case bool(): # bool
+                    return (b'\x01' if obj else b'\x00') if self.metadata['RAW_VALUES'] else (b'bool\x00\x01' if obj else b'bool\x00\x00')
                 case 0:  # int
                     try:
                         return helpers['bstr_from_int'](obj) if self.metadata['RAW_VALUES'] \
