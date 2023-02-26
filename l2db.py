@@ -290,13 +290,13 @@ expected one of {self.supported_index_types}!")
             match self.metadata['DB_INDEX_TYPE']:
                 case 1:
                     body_segment = to_bytes(self.db[key])
-                    valtable += (helpers['bstr_from_int'](len(body), unsigned=True) \
-                                 + helpers['bstr_from_int'](len(body_segment) + len(body), unsigned=True) \
-                                 + helpers['bstr_from_str'](str(key)) + b'\x00')
+                    valtable += (helpers['bstr_from_int'](                    len(body), unsigned=True) \
+                               + helpers['bstr_from_int'](len(body_segment) + len(body), unsigned=True) \
+                               + helpers['bstr_from_str'](str(key)) + b'\x00')
                     # print(f'DB_INDEX_TYPE: 1, body len: {len(body)}, body_segment len: {len(body_segment)}, valtable: {valtable}, key: {key}, self.db[key]: {repr(self.db[key])}, body_segment: {body_segment}') #debug
                 case 2:
                     valtable += (helpers['bstr_from_long'](len(body), unsigned=True)
-                                 + helpers['bstr_from_str'](str(key)) + b'\x00')
+                               + helpers['bstr_from_str'] (str(key)) + b'\x00')
                     body_segment = to_bytes(self.db[key])
                     # print(f'DB_INDEX_TYPE: 2, body len: {len(body)}, body_segment len: {len(body_segment)}, valtable: {valtable}, key: {key}, self.db[key]: {repr(self.db[key])}, body_segment: {body_segment}') #debug
             body += body_segment
