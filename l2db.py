@@ -445,7 +445,7 @@ if __name__ == '__main__':
     try:
         db = L2DB({'hello':'world','key':'value','some number':42,'Does bool exist?':True})
         print(f'db =           {db}\ndb.metadata =  {db.metadata}\ndb.database =  {db.database}')
-        print(f'db2 =          {(db2:=L2DB(db.create_db()))}\ndb2.database = {db2.database}')
+        print(f'db2 =          {(db2:=L2DB(db.create_db()))}\ndb.metadata =  {db.metadata}\ndb2.database = {db2.database}')
     except Exception as e:
         print('''Could unfortunately not demo the database functionality!
 The following technical mumbo jumbo should show what went wrong:''')
