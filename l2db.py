@@ -19,6 +19,8 @@ which will be stripped away and the resulting 0-character type declaration will 
 to be stored as the raw binary value.
 """
 
+#TODO: Implement infinitely long variable names and metadata['DIRSEP']-separated "directories"! (store that DIRSEP in a single metadata byte)
+#TODO: Implement all unsupported types by setting the type part of the value to type(obj).__name__ and the value part of the value to repr(obj)!
 
 class L2DBError(BaseException):
     """General error in the l2db module."""
