@@ -17,6 +17,8 @@ The IDTAB is followed by the DATA block, just all values concatenated directly a
     can only be separated by using the IDTAB block.
 """
 
+#TODO: Implement all unsupported types by setting the type part of the value to type(obj).__name__ and the value part of the value to repr(obj)!
+
 class L2DBError(BaseException):
     """General error in the l2db module."""
     ...
