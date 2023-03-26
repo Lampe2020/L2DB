@@ -14,7 +14,8 @@ The metadata are followed by a JSON-formatted DIRTREE, containing the variable n
 The DIRTREE is followed by the IDTAB (ID table) that is formatted as follows:
     4 bytes ID, 8 bytes starting index, [...], 4 bytes unused ID, 8 bytes VALTAB's length
 The IDTAB is followed by the DATA block, just all values concatenated directly after one another,
-    can only be separated by using the IDTAB block.
+    can only be separated by using the IDTAB block. The values begin with an ASCII representation of their type
+    `type(obj).__name__` followed by either the raw data (if supported) or an ASCII representation of them `repr(obj)`.
 """
 
 #TODO: Implement all unsupported types by setting the type part of the value to type(obj).__name__ and the value part of the value to repr(obj)!
