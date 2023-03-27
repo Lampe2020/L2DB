@@ -15,8 +15,9 @@ The DIRTREE is followed by the IDTAB (ID table) that is formatted as follows:
     4 bytes ID, 8 bytes starting index, [...], 4 bytes unused ID, 8 bytes VALTAB's length
 The IDTAB is followed by the DATA block, just all values concatenated directly after one another,
     can only be separated by using the IDTAB block. The names begin with an ASCII representation of their type
-    `type(obj).__name__` (separated using one underscore, the namesti elf can still contain underscores that don't get
-    split away) followed by either the raw data (if supported) or an ASCII representation of them `repr(obj)`.
+    `type(obj).__name__` (separated using one underscore, the name itself can still contain underscores that don't get
+    split away). The values are stored either as the raw data (if supported) or an ASCII representation of them
+    `repr(obj)`.
 """
 
 #TODO: Implement all unsupported types by setting the type part of the value to type(obj).__name__ and the value part of the value to repr(obj)!
