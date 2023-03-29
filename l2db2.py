@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-# L2DB ver.2
+L2DB ver.2
+→ directory structure emulated with dots in the names and stored in 1st format to make it harder to manually decompile manually
 The first 64 bytes are metadata as in L2DBver.1,
     the first 8 of which are the "file magic".
     The file magic is followed by the implementation version

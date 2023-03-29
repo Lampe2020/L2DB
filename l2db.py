@@ -19,6 +19,9 @@ which will be stripped away and the resulting 0-character type declaration will 
 to be stored as the raw binary value.
 """
 
+import collections.abc as collections
+import struct
+
 class L2DBError(BaseException):
     """General error in the l2db module."""
     ...
@@ -64,51 +67,87 @@ but can be set to False (complain only about critical errors) using this method.
     # Indicates what index types are supported by this implementation of L2DB:
     supported_index_types = property(lambda self: (1, 2))
 
-    def helpers(self, which=None):
-        """Return helper functions, select a subset or a single one of those using the which argument."""
-        exec("""# These functions are little helpers. Some of them use the struct module,
-# the formatting characters are described here:        https://docs.python.org/3.7/library/struct.html#format-characters
-# and the '>' is described here:           https://docs.python.org/3.7/library/struct.html#byte-order-size-and-alignment
-def str_from_bstr(bstr):
-    return ''.join([chr(l) for l in bstr])
-def bstr_from_str(strng):
-    return bytes([ord(l) for l in strng])
-def ins_into_bstr(bstr,idx,val):
-    bstr_list = list(bstr)
-    bstr_list[idx]=(val if type(val)==int else val[0] if type(val)==bytes else int(val)) # Ensure that the new value is
-    # an integer so it can be interpreted as a byte.
-    return bytes(bstr_list)
-def long_from_bstr(bstr, unsigned=False):
-    import struct
-    return struct.unpack(f'>{"Q" if unsigned else "q"}', bstr[0:8])[0]
-def int_from_bstr(bstr, unsigned=False):
-    import struct
-    return struct.unpack(f'>{"I" if unsigned else "i"}', bstr[0:4])[0]
-def float_from_bstr(bstr):
-    import struct
-    return struct.unpack('>f', bstr[0:4])[0]
-def double_from_bstr(bstr):
-    import struct
-    return struct.unpack('>d', bstr[0:8])[0]
-def bstr_from_long(num,unsigned=False):
-    import struct
-    return struct.pack(f'>{"Q" if unsigned else "q"}', num)
-def bstr_from_int(num,unsigned=False):
-    import struct
-    return struct.pack(f'>{"I" if unsigned else "i"}', num)
-def bstr_from_float(fnum):
-    import struct
-    return struct.pack('>f', fnum)
-def bstr_from_double(dnum):
-    import struct
-    return struct.pack('>d', dnum)
-def ret_as_dict(obj):
-    return obj.db if type(obj)==L2DB else obj if type(obj)==dict else dict(obj)
-        """, (helper_functions := {}))
-        # Remove the built-in functions from the helper_functions
-        # as they are already defined in global scope
-        # and would just clutter the output.
-        del helper_functions['__builtins__']
+    def __helpers(self, which=None):
+        """Return helper functions, select a subset or a single one of those using the which argument.
+        These functions are little helpers. Some of them use the struct module,
+        the formatting characters are described here:  https://docs.python.org/3.7/library/struct.html#format-characters
+        and the '>' is described here:     https://docs.python.org/3.7/library/struct.html#byte-order-size-and-alignment
+        """
+
+        def str_from_bstr(bstr):
+            return ''.join([chr(l) for l in bstr])
+
+        def bstr_from_str(strng):
+            return bytes([ord(l) for l in strng])
+
+        def ins_into_bstr(bstr, idx, val):
+            bstr_list = list(bstr)
+            bstr_list[idx] = (
+                val if type(val) == int else val[0] if type(val) == bytes else int(val))  # Ensure that the new
+            # value is an integer so it can be interpreted as a byte.
+            return bytes(bstr_list)
+
+        def long_from_bstr(bstr, unsigned=False):
+            return struct.unpack(f'>{"Q" if unsigned else "q"}', bstr[0:8])[0]
+
+        def int_from_bstr(bstr, unsigned=False):
+            return struct.unpack(f'>{"I" if unsigned else "i"}', bstr[0:4])[0]
+
+        def float_from_bstr(bstr):
+            return struct.unpack('>f', bstr[0:4])[0]
+
+        def double_from_bstr(bstr):
+            return struct.unpack('>d', bstr[0:8])[0]
+
+        def bstr_from_long(num, unsigned=False):
+            return struct.pack(f'>{"Q" if unsigned else "q"}', num)
+
+        def bstr_from_int(num, unsigned=False):
+            return struct.pack(f'>{"I" if unsigned else "i"}', num)
+
+        def bstr_from_float(fnum):
+            return struct.pack('>f', fnum)
+
+        def bstr_from_double(dnum):
+            return struct.pack('>d', dnum)
+
+        def ret_as_dict(obj):
+            return obj.db if type(obj) == L2DB else obj if type(obj) == dict else dict(obj)
+
+        def flatten_dict(d, parent_key='',
+                         sep='/'):  # From https://stackoverflow.com/a/6027615, last accessed 2023-03-29 07:20
+            items = []
+            for k, v in d.items():
+                new_key = parent_key + sep + k if parent_key else k
+                if isinstance(v, collections.MutableMapping):
+                    items.extend(flatten_dict(v, new_key, sep=sep).items())
+                else:
+                    items.append((new_key, v))
+            return dict(items)
+
+        def deepen_dict(d, sep='/'):  # Generated by ChatGPT with instructions by Lampe2020, slightly modified
+            def apply_value(dictionary, keys, value):
+                if len(keys) == 1:
+                    dictionary[keys[0]] = value
+                else:
+                    key = keys[0]
+                    if key not in dictionary:
+                        dictionary[key] = {}
+                    apply_value(dictionary[key], keys[1:], value)
+
+            deepened_dict = {}
+            for key, value in d.items():
+                if not isinstance(key, str):
+                    d[str(key)] = d[key]
+                    d.pop(key, None) # Remove the non-string key from the dict
+                keys = key.split(sep)
+                apply_value(deepened_dict, keys, value)
+            return deepened_dict
+
+        helper_functions = locals()  # puts all local variables into a dict
+        helper_functions.pop('__doc__', None)  # Remove  key '__doc__' from dict's contents if needed.
+        # The second argument specifies the return value if the key is not found.
+
         # Decide what functions to give back:
         if which == None:
             return helper_functions
@@ -148,7 +187,7 @@ returns a dictionary containing all the name-value pairs from the database. """
             raise L2DBSyntaxError(f"The magic bytes are incorrect: {metadata[0:8]} \
 (expected b'\\x88L2DB\\x00\\x00\\x00' or b'\\x88L2020DB')")
         self.update_metadata('VER', metadata[8])  # Should return the single byte's value as int
-        self.update_metadata('VALTABLE_LEN', self.helpers(which='int_from_bstr')(metadata[9:13], unsigned=True))
+        self.update_metadata('VALTABLE_LEN', self.__helpers(which='int_from_bstr')(metadata[9:13], unsigned=True))
         if self.strict and metadata[13] not in self.supported_index_types:
             raise L2DBError(f"DB_INDEX_TYPE of {metadata[13]} is not supported, \
 expected one of {self.supported_index_types}!")
@@ -169,13 +208,13 @@ expected one of {self.supported_index_types}!")
             if len(buffer) == 8:
                 match self.metadata['DB_INDEX_TYPE']:
                     case 1:
-                        int_from_bstr = self.helpers(which='int_from_bstr')
+                        int_from_bstr = self.__helpers(which='int_from_bstr')
                         cur_idx = (int_from_bstr(bytes(buffer[:4]), unsigned=True), int_from_bstr(bytes(buffer[4:]),
                                                                                               unsigned=True))
                     case 2:
                         ...  # whole current buffer and next index is index tuple
                         # (buffer, None), then in next iteration change index[1] to the next starting index.
-                        cur_idx = (self.helpers(which='long_from_bstr')(bytes(buffer), unsigned=True), None)
+                        cur_idx = (self.__helpers(which='long_from_bstr')(bytes(buffer), unsigned=True), None)
                     case _:
                         if self.strict:
                             raise L2DBError(f"DB_INDEX_TYPE of {self.metadata['DB_INDEX_TYPE']} is not supported, \
@@ -215,7 +254,7 @@ expected one of {self.supported_index_types}!")
                     raise L2DBError(f"DB_INDEX_TYPE of {self.metadata['DB_INDEX_TYPE']} is not supported, \
 expected one of {self.supported_index_types}!")
         if not self.metadata['RAW_VALUES']:
-            helpers = self.helpers()
+            helpers = self.__helpers()
             for key in self.db:
                 try:
                     match self.db[key].split(b'\x00', 1)[0]:
@@ -246,7 +285,7 @@ expected one of {self.supported_index_types}!")
         """Creates a database file in a binary string and returns it."""
         valtable = b''
         body = b''
-        helpers = self.helpers()
+        helpers = self.__helpers()
 
         def to_bytes(obj):
             "Wrapper to many of the above-defined helper functions"
@@ -304,7 +343,7 @@ expected one of {self.supported_index_types}!")
         # Metadata
         metadata = list(self.magic) + [0 for x in range(64 - len(self.magic))]
         metadata[8], metadata[9:13], metadata[13], metadata[14] = self.metadata['VER'], \
-            self.helpers(which='bstr_from_int')(self.metadata['VALTABLE_LEN'], unsigned=True), \
+            self.__helpers(which='bstr_from_int')(self.metadata['VALTABLE_LEN'], unsigned=True), \
             self.metadata['DB_INDEX_TYPE'], self.metadata['RAW_VALUES']
         metadata = bytes(metadata)
 
@@ -353,14 +392,14 @@ expected one of {self.supported_index_types}!")
         """Concatenates the L2DB with another L2DB or dict and returns the result."""
         new_l2db = L2DB(source=b'', ign_corrupted_source=True)
         new_l2db.db.update(self.db)
-        new_l2db.db.update(self.helpers(which='ret_as_dict')(other))
+        new_l2db.db.update(self.__helpers(which='ret_as_dict')(other))
         return new_l2db
 
     def __sub__(self, other):
         """Removes all keys found in `other` from the L2DB object and returns the result."""
         new_l2db = L2DB(source=b'', ign_corrupted_source=True)
         new_l2db.db = {key: self.db[key] for key in self.db if key in
-                       (self.helpers(which='ret_as_dict')(other))}
+                       (self.__helpers(which='ret_as_dict')(other))}
         return new_l2db
 
     def __radd__(self, other):
@@ -403,7 +442,7 @@ expected one of {self.supported_index_types}!")
 
     def __eq__(self, other):
         """Checks for equality of the L2DB object and another or dict and returns the result."""
-        return self.db == (self.helpers(which='ret_as_dict')(other))
+        return self.db == (self.__helpers(which='ret_as_dict')(other))
 
     def __ne__(self, other):
         """Checks for unequality of the L2DB object and another or dict and returns the result."""
@@ -411,21 +450,21 @@ expected one of {self.supported_index_types}!")
 
     def __lt__(self, other):
         """Checks if the L2DB object has less keys in it than the other or dict and returns the result."""
-        return len(self.db) < len(self.helpers(which='ret_as_dict')(other))
+        return len(self.db) < len(self.__helpers(which='ret_as_dict')(other))
 
     def __gt__(self, other):
         """Checks if the L2DB object has more keys in it than the other or dict and returns the result."""
-        return len(self.db) > len(self.helpers(which='ret_as_dict')(other))
+        return len(self.db) > len(self.__helpers(which='ret_as_dict')(other))
 
     def __le__(self, other):
         """Checks if the L2DB object has less or equally many keys in it as/than the other or dict \
 and returns the result."""
-        return len(self.db) <= len(self.helpers(which='ret_as_dict')(other))
+        return len(self.db) <= len(self.__helpers(which='ret_as_dict')(other))
 
     def __ge__(self, other):
         """Checks if the L2DB object has more or equally many keys in it as/than the other or dict \
 and returns the result."""
-        return len(self.db) >= len(self.helpers(which='ret_as_dict')(other))
+        return len(self.db) >= len(self.__helpers(which='ret_as_dict')(other))
 
     def __contains__(self, item):
         """Returns True if the key `item` is found in the L2DB, otherwise False."""
