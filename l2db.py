@@ -12,7 +12,7 @@ In the value_table, two 4-byte (32-bit) numbers for each value represent the sta
 (DB_INDEX_TYPE:1). The names of all values are immediately after their index and null-terminated,
 up to 32 usable bytes per name. If the index is immediately followed by a null-byte the index is used as the name.
 Alternatively, 8 bytes represent the index and the end is then the byte before the next index or the
-file end (DB_INDEX_TYPE:2). A DB_INDEX_TYPE of 0 is invalid and as of now also anything above 2; they will default to 1.
+file end (DB_INDEX_TYPE:2). A DB_INDEX_TYPE of 0 is invalid and as of now also anything above 2; they will default to 2.
 Type declarations occur in the value itslef, with ASCII-encoded type name, separated by null from the value.
 To get a bstring without type declaration, just begin the value with a null character,
 which will be stripped away and the resulting 0-character type declaration will cause the value
@@ -217,18 +217,17 @@ expected one of {self.supported_index_types}!")
                             raise L2DBError(f"DB_INDEX_TYPE of {self.metadata['DB_INDEX_TYPE']} is not supported, \
 expected one of {self.supported_index_types}!")
 
-            elif len(buffer) == (8 + 33) or buffer[-1] == 0:
-                if len(buffer) > 8:  # Avoid taking an index number with null-bytes in it as the end of the key's name!
-                    key = ''.join([chr(l) for l in buffer[8:-1]])
-                    self.valtable[key] = cur_idx
-                    if self.metadata['DB_INDEX_TYPE'] == 2:
-                        try:
-                            self.valtable[prev_valtable_entry] = (self.valtable[prev_valtable_entry][0], cur_idx[0])
-                        except KeyError as e:
-                            if not str(e) == "''":
-                                raise
-                        prev_valtable_entry = key
-                    buffer = []
+            elif (buffer[-1] == 0) and (len(buffer) > 8):  # Avoid taking an index number with null-bytes in it as the end of the key's name!
+                key = ''.join([chr(l) for l in buffer[8:-1]])
+                self.valtable[key] = cur_idx
+                if self.metadata['DB_INDEX_TYPE'] == 2:
+                    try:
+                        self.valtable[prev_valtable_entry] = (self.valtable[prev_valtable_entry][0], cur_idx[0])
+                    except KeyError as e:
+                        if not str(e) == "''":
+                            raise
+                    prev_valtable_entry = key
+                buffer = []
 
         # Body
         body = database[64 + self.metadata['VALTABLE_LEN']:]
