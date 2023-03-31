@@ -88,7 +88,7 @@ but can be set to False (complain only about critical errors) using this method.
     strict = property((lambda self: bool(self.__strict)), __set_strictness)
 
     # Indicates the version of the implementation:
-    implementation_version = property(lambda self: 1)
+    implementation_version = property(lambda self: 2)
     # Indicates what index types are supported by this implementation of L2DB:
     supported_index_types = property(lambda self: (1, 2))
 
