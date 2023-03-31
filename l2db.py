@@ -306,12 +306,15 @@ expected one of {self.supported_index_types}!")
                                     self.db[key] = self.__registered_types[reg_type][1](self.db[key].split(b'\x00', 1)[1])
                 except Exception as e:
                     print(f"Couldn't assign type to entry '{key}' because of a {type(e).__name__}: {e}")
+        if self.metadata['VER']>1:
+            self.db = self.__helpers(which='deepen_dict')(self.db)
 
     def create_db(self):
         """Creates a database file in a binary string and returns it."""
         valtable = b''
         body = b''
         helpers = self.__helpers()
+        flat_db = helpers['flatten_dict'](self.db) if self.metadata['VER']>1 else self.db.copy()
 
         def to_bytes(obj):
             "Wrapper to many of the above-defined helper functions"
@@ -355,20 +358,20 @@ expected one of {self.supported_index_types}!")
                         else b'str\x00' + helpers['bstr_from_str'](repr(obj))  # ...or just represent it as a string
 
         # Valtable+Body
-        for key in self.db:
+        for key in flat_db:
             # Note that non-string keys will be stored as string keys!
             match self.metadata['DB_INDEX_TYPE']:
                 case 1:
-                    body_segment = to_bytes(self.db[key])
+                    body_segment = to_bytes(flat_db[key])
                     valtable += (helpers['bstr_from_int'](                    len(body), unsigned=True) \
                                + helpers['bstr_from_int'](len(body_segment) + len(body), unsigned=True) \
                                + helpers['bstr_from_str'](str(key)) + b'\x00')
                 case 2:
                     valtable += (helpers['bstr_from_long'](len(body), unsigned=True)
                                + helpers['bstr_from_str'] (str(key)) + b'\x00')
-                    body_segment = to_bytes(self.db[key])
+                    body_segment = to_bytes(flat_db[key])
             body += body_segment
-        print(self.db)  # debug
+        #print(flat_db) #debug
         self.update_metadata('VALTABLE_LEN', len(valtable))
 
         # Metadata
@@ -514,7 +517,7 @@ if __name__ == '__main__':
     try:
         db = L2DB({'hello':'world','key':'value','some number':42,'Does bool exist?':True})
         print(f'db =           {db}\ndb.metadata =  {db.metadata}\ndb.database =  {db.database}')
-        print(f'db2 =          {(db2:=L2DB(db.create_db()))}\ndb.metadata =  {db.metadata}\ndb2.database = {db2.database}')
+        print(f'db2 =          {(db2:=L2DB(db.create_db()))}\ndb2.metadata = {db2.metadata}\ndb2.database = {db2.database}')
     except Exception as e:
         print('''Could unfortunately not demo the database functionality!
 The following technical mumbo jumbo should show what went wrong:''')
