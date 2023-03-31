@@ -40,6 +40,7 @@ class L2DB:
         self.__source_file = source if type(source) == str else '<bytes object>' if type(source) == bytes \
             else '<dict object>'
         self.__strict = True
+        self.__registered_types = {}
         self.strict = not ign_corrupted_source
         self.db = None
         # Default metadata, only kept when L2DB created from dict:
@@ -54,6 +55,30 @@ class L2DB:
             self.db = source
         else:
             raise TypeError(f"unsupported source type for l2db: '{type(source).__name__}' (expected 'str' or 'bytes')!")
+
+    def register_type(self, objtype, ftobin, ffrombin=None):
+        """
+        type:     str type name, what you get when you run type(your_object).__name__
+        ftobin:   function that can convert the object to binary, must take exactly one argument (obj) and return
+                  a binary string.
+        ffrombin: (optional) function that takes exactly one object (bstr) and returns any object
+
+        Example setup:
+        >>> class TestObject:
+        ...     ...
+        ...
+        >>> def tobj_tobin(obj):
+        ...     return b'\x00'
+        ...
+        >>> def tobj_frombin(bstr):
+        ...     return TestObject()
+        ...
+        >>> database.register_type('TestObject', tobj_tobin, tobj_frombin)
+        {'objtype': 'TestObject', 'ftobin': <function tobj_tobin at 0x000000000000>,
+            'ffrombin': <function tobj_frombin at 0x000000000000>}
+        """
+        self.__registered_types.update({str(objtype): [ftobin, ffrombin]})
+        return {'objtype': objtype, 'ftobin': ftobin, 'ffrombin': ffrombin}
 
     def __set_strictness(self, strictness):
         """Per standard the strictness is True (complain about every error, even non-critical ones),
@@ -274,6 +299,11 @@ expected one of {self.supported_index_types}!")
                         case req_type if req_type in (b'', b'bstr', b'bytes'):
                             self.db[key] = self.db[key].split(b'\x00', 1)[
                                 1]  # Just cut away the leading null-byte to not destroy the actual value
+                        case req_type if req_type in self.__registered_types:
+                            str_req_type = self.__helpers(which='bstr_to_str')(req_type)
+                            for reg_type in self.__registered_types:
+                                if str_req_type==self.__registered_types[reg_type]:
+                                    self.db[key] = self.__registered_types[reg_type][1](self.db[key].split(b'\x00', 1)[1])
                 except Exception as e:
                     print(f"Couldn't assign type to entry '{key}' because of a {type(e).__name__}: {e}")
 
@@ -291,7 +321,7 @@ expected one of {self.supported_index_types}!")
                         else b'str\x00' + helpers['bstr_from_str'](obj)
                 case bool(): # bool
                     return (b'\x01' if obj else b'\x00') if self.metadata['RAW_VALUES'] else (b'bool\x00\x01' if obj else b'bool\x00\x00')
-                case 0:  # int
+                case int():  # int
                     try:
                         return helpers['bstr_from_int'](obj) if self.metadata['RAW_VALUES'] \
                             else b'int\x00' + helpers['bstr_from_int'](obj)
@@ -306,18 +336,23 @@ expected one of {self.supported_index_types}!")
                                 f'Error while trying to convert {obj} to binary as signed long long:\n{type(e2).__name__}: {e2}')
                             return helpers['bstr_from_long'](obj, unsigned=True) if self.metadata['RAW_VALUES'] \
                                 else b'ulong\x00' + helpers['bstr_from_long'](obj, unsigned=True)
-                case 0.0:  # float
+                case float():  # float
                     try:
                         return helpers['bstr_from_float'](obj) if self.metadata['RAW_VALUES'] \
                             else b'float\x00' + helpers['bstr_from_float'](obj)
                     except OverflowError:
                         return helpers['bstr_from_double'](obj) if self.metadata['RAW_VALUES'] \
                             else b'double\x00' + helpers['bstr_from_double'](obj)
-                case b'':  # bytes
+                case bytes():  # bytes
                     return obj if self.metadata['RAW_VALUES'] else b'\x00' + obj
                 case _:  # If the type isn't one of the directly supported above...
+                    if not self.metadata['RAW_VALUES']: # ... try it with one of the custom added types ...
+                        for reg_type in self.__registered_types:
+                            if type(_).__name__==self.__registered_types[reg_type]:
+                                return self.__helpers(which='bstr_from_str')(reg_type)+b'\x00'\
+                                    +self.__registered_types[reg_type][0](obj)
                     return helpers['bstr_from_str'](repr(obj)) if self.metadata['RAW_VALUES'] \
-                        else b'str\x00' + helpers['bstr_from_str'](repr(obj))  # ...just represent it as a string
+                        else b'str\x00' + helpers['bstr_from_str'](repr(obj))  # ...or just represent it as a string
 
         # Valtable+Body
         for key in self.db:
