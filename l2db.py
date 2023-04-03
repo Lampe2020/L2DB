@@ -146,8 +146,12 @@ but can be set to False (complain only about critical errors) using this method.
                 path, current = stack.pop()
                 for k, v in current.items():
                     if isinstance(v, dict):
+                        non-string-keys = [k_ for k_ in v if type(k_)!=str]
+                        for k_ in non_string_keys:
+                            v[str(k_)] = v[k_]
+                            del v[k_]
                         if v:
-                            stack.append((path + (k,), v))
+                            stack.append((path + (str(k),), v))
                         else:
                             flat_dict[sep.join((path + (k,)))] = ''
                     else:
