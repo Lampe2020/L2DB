@@ -2,28 +2,25 @@
 # -*- coding: utf-8 -*-
 
 """
-L2DB ver.2
-→ directory structure emulated with dots in the names and stored in 1st format to make it harder to manually decompile manually
-The first 64 bytes are metadata as in L2DBver.1,
-    the first 8 of which are the "file magic".
-    The file magic is followed by the implementation version
-    that is followed by a 4-byte-long UNSIGNED_INT32 for the DIRTREE length
-    that is followed by another UNSIGNED_INT32 for the IDTAB length
-    which is followed by other potential metadata.
-The metadata are followed by a JSON-formatted DIRTREE, containing the variable names and as values their IDs.
-    The same ID can be used several times to store duplicate values only once.
-The DIRTREE is followed by the IDTAB (ID table) that is formatted as follows:
-    4 bytes ID, 8 bytes starting index, [...], 4 bytes unused ID, 8 bytes VALTAB's length
-The IDTAB is followed by the DATA block, just all values concatenated directly after one another,
-    can only be separated by using the IDTAB block. The names begin with an ASCII representation of their type
-    `type(obj).__name__` (separated using one underscore, the name itself can still contain underscores that don't get
-    split away). The values are stored either as the raw data (if supported) or an ASCII representation of them
-    `repr(obj)`.
+The first 64 bytes of the file are reserved for metadata, 8 of which define the value_table's length after the metadata.
+The first 8 bytes are _always_ b'\\x88L2DB\\x00\\x00\\x00' or b'\\x88L2020DB'.
+Length of value_table defined in 32-bit number (4 bytes) (There should never be the need for a 4GB+ big index listing!).
+All indexes are beginning to be counted after that.
+For example, with a value_table length of 12, the byte at real index 100 is called
+index ((real_index:100)-(metadata_length:const:64)-(value_table_length=12)) = 14.
+In the value_table, two 4-byte (32-bit) numbers for each value represent the start and end index of that value
+(DB_INDEX_TYPE:1). The names of all values are immediately after their index and null-terminated,
+up to 32 usable bytes per name. If the index is immediately followed by a null-byte the index is used as the name.
+Alternatively, 8 bytes represent the index and the end is then the byte before the next index or the
+file end (DB_INDEX_TYPE:2). A DB_INDEX_TYPE of 0 is invalid and as of now also anything above 2; they will default to 2.
+Type declarations occur in the value itslef, with ASCII-encoded type name, separated by null from the value.
+To get a bstring without type declaration, just begin the value with a null character,
+which will be stripped away and the resulting 0-character type declaration will cause the value
+to be stored as the raw binary value.
 """
 
-#TODO: Implement all unsupported types by setting the type part of the value to type(obj).__name__ and the value part of the value to repr(obj)!
-
-import json
+import collections.abc as collections
+import struct
 
 class L2DBError(BaseException):
     """General error in the l2db module."""
@@ -37,13 +34,13 @@ class L2DBSyntaxError(SyntaxError):
 
 class L2DB:
     """L2DB - The __database class that implements reading and writing of L2DB files."""
-    #TODO: Make internal functions and variables harder to access from outside!
+
     def __init__(self, source={}, ign_corrupted_source=False):
         """Initializes the L2DB object."""
-        self.__registered_types = {}
         self.__source_file = source if type(source) == str else '<bytes object>' if type(source) == bytes \
             else '<dict object>'
         self.__strict = True
+        self.__registered_types = {}
         self.strict = not ign_corrupted_source
         self.db = None
         # Default metadata, only kept when L2DB created from dict:
@@ -58,18 +55,6 @@ class L2DB:
             self.db = source
         else:
             raise TypeError(f"unsupported source type for l2db: '{type(source).__name__}' (expected 'str' or 'bytes')!")
-
-    def __set_strictness(self, strictness):
-        """Per standard the strictness is True (complain about every error, even non-critical ones),
-but can be set to False (complain only about critical errors) using this method."""
-        self.__strict = not not strictness
-
-    strict = property((lambda self: bool(self.__strict)), __set_strictness)
-
-    # Indicates the version of the implementation:
-    implementation_version = property(lambda self: 2)
-    # Indicates what index types are supported by this implementation of L2DB:
-    supported_index_types = property(lambda self: (1, 2)) #TODO: remove this!
 
     def register_type(self, objtype, ftobin, ffrombin=None):
         """
@@ -92,8 +77,20 @@ but can be set to False (complain only about critical errors) using this method.
         {'objtype': 'TestObject', 'ftobin': <function tobj_tobin at 0x000000000000>,
             'ffrombin': <function tobj_frombin at 0x000000000000>}
         """
-        self.__registered_types.update({str(type): [ftobin, ffrombin]})
+        self.__registered_types.update({str(objtype): [ftobin, ffrombin]})
         return {'objtype': objtype, 'ftobin': ftobin, 'ffrombin': ffrombin}
+
+    def __set_strictness(self, strictness):
+        """Per standard the strictness is True (complain about every error, even non-critical ones),
+but can be set to False (complain only about critical errors) using this method."""
+        self.__strict = not not strictness
+
+    strict = property((lambda self: bool(self.__strict)), __set_strictness)
+
+    # Indicates the version of the implementation:
+    implementation_version = property(lambda self: 2)
+    # Indicates what index types are supported by this implementation of L2DB:
+    supported_index_types = property(lambda self: (1, 2))
 
     def __helpers(self, which=None):
         """Return helper functions, select a subset or a single one of those using the which argument.
@@ -101,45 +98,81 @@ but can be set to False (complain only about critical errors) using this method.
         the formatting characters are described here:  https://docs.python.org/3.7/library/struct.html#format-characters
         and the '>' is described here:     https://docs.python.org/3.7/library/struct.html#byte-order-size-and-alignment
         """
+
         def str_from_bstr(bstr):
             return ''.join([chr(l) for l in bstr])
+
         def bstr_from_str(strng):
             return bytes([ord(l) for l in strng])
-        def ins_into_bstr(bstr,idx,val):
+
+        def ins_into_bstr(bstr, idx, val):
             bstr_list = list(bstr)
-            bstr_list[idx]=(val if type(val)==int else val[0] if type(val)==bytes else int(val)) # Ensure that the new
+            bstr_list[idx] = (
+                val if type(val) == int else val[0] if type(val) == bytes else int(val))  # Ensure that the new
             # value is an integer so it can be interpreted as a byte.
             return bytes(bstr_list)
+
         def long_from_bstr(bstr, unsigned=False):
-            import struct
             return struct.unpack(f'>{"Q" if unsigned else "q"}', bstr[0:8])[0]
+
         def int_from_bstr(bstr, unsigned=False):
-            import struct
             return struct.unpack(f'>{"I" if unsigned else "i"}', bstr[0:4])[0]
+
         def float_from_bstr(bstr):
-            import struct
             return struct.unpack('>f', bstr[0:4])[0]
+
         def double_from_bstr(bstr):
-            import struct
             return struct.unpack('>d', bstr[0:8])[0]
-        def bstr_from_long(num,unsigned=False):
-            import struct
+
+        def bstr_from_long(num, unsigned=False):
             return struct.pack(f'>{"Q" if unsigned else "q"}', num)
-        def bstr_from_int(num,unsigned=False):
-            import struct
+
+        def bstr_from_int(num, unsigned=False):
             return struct.pack(f'>{"I" if unsigned else "i"}', num)
+
         def bstr_from_float(fnum):
-            import struct
             return struct.pack('>f', fnum)
+
         def bstr_from_double(dnum):
-            import struct
             return struct.pack('>d', dnum)
+
         def ret_as_dict(obj):
             return obj.__db if type(obj) == L2DB else obj if type(obj) == dict else dict(obj)
 
-        helper_functions = locals() # puts all local variables into a dict
-        helper_functions.pop('__doc__', None) # Remove  key '__doc__' from dict's contents if needed.
-                                              # The second argument specifies the return value if the key is not found.
+        def flatten_dict(d, sep='/'):
+            flat_dict = {}
+            stack = [((), d)]
+            while stack:
+                path, current = stack.pop()
+                for k, v in current.items():
+                    if isinstance(v, dict):
+                        non_string_keys = [k_ for k_ in v if type(k_)!=str]
+                        for k_ in non_string_keys:
+                            v[str(k_)] = v[k_]
+                            del v[k_]
+                        if v:
+                            stack.append((path + (str(k),), v))
+                        else:
+                            flat_dict[sep.join((path + (k,)))] = ''
+                    else:
+                        flat_dict[sep.join((path + (k,)))] = v
+            return flat_dict
+
+        def deepen_dict(d, sep='/'):
+            result = {}
+            for key, value in d.items():
+                parts = key.split(sep)
+                current = result
+                for part in parts[:-1]:
+                    if part not in current:
+                        current[part] = {}
+                    current = current[part]
+                current[parts[-1]] = value
+            return result
+
+        helper_functions = locals()  # puts all local variables into a dict
+        helper_functions.pop('__doc__', None)  # Remove  key '__doc__' from dict's contents if needed.
+        # The second argument specifies the return value if the key is not found.
 
         # Decide what functions to give back:
         if which == None:
@@ -169,7 +202,7 @@ returns a dictionary containing all the name-value pairs from the __database. ""
         """Writes the __database to the file with the given path. Returns the binary representation of the file."""
         db = self.create_db()
         with open(file, 'wb') as dbf:  # dbf: DataBase-File
-            dbf.write(db) # Put into a variable beforehand to run as little code as possible within file context manager
+            dbf.write(db)
         return db
 
     def eval_db(self, database):
@@ -179,103 +212,113 @@ returns a dictionary containing all the name-value pairs from the __database. ""
         if self.strict and metadata[0:8] not in (b'\x88L2DB\x00\x00\x00', b'\x88L2020DB'):
             raise L2DBSyntaxError(f"The magic bytes are incorrect: {metadata[0:8]} \
 (expected b'\\x88L2DB\\x00\\x00\\x00' or b'\\x88L2020DB')")
-        if self.strict and metadata[8] != self.implementation_version:
-            raise L2DBError(f'Incompatible file version! ({metadata[8]}!={self.implementation_version})')
-        self.update_metadata('DIRTREE_LEN', self.__helpers(which='int_from_bstr')(metadata[9:13], unsigned=True))
-        self.update_metadata('IDTAB_LEN',   self.__helpers(which='int_from_bstr')(metadata[13:17], unsigned=True))
+        self.update_metadata('VER', metadata[8])  # Should return the single byte's value as int
+        self.update_metadata('VALTABLE_LEN', self.__helpers(which='int_from_bstr')(metadata[9:13], unsigned=True))
+        if self.strict and metadata[13] not in self.supported_index_types:
+            raise L2DBError(f"DB_INDEX_TYPE of {metadata[13]} is not supported, \
+expected one of {self.supported_index_types}!")
+        else:
+            self.update_metadata('DB_INDEX_TYPE', metadata[13])  # Should return the single byte's value as int
+        self.update_metadata('RAW_VALUES', (not not metadata[14]))
 
-        # Dirtree
-        dirtree = database[64:64 + self.metadata['DIRTREE_LEN']]
-# TODO: recreate the commented-out code for the new version
-#
-#         buffer = []  # Create a buffer for the below for loop to store its bytes in
-#         self.valtable.clear()  # Remove all contents from the current valtable
-#         if self.metadata['DB_INDEX_TYPE'] == 2:
-#             prev_valtable_entry = ''
-#         cur_idx = (0, None)
-#         for byte in valtable:
-#             buffer.append(byte)
-#             if len(buffer) == 8:
-#                 match self.metadata['DB_INDEX_TYPE']:
-#                     case 1:
-#                         int_from_bstr = self.__helpers(which='int_from_bstr')
-#                         cur_idx = (int_from_bstr(bytes(buffer[:4]), unsigned=True), int_from_bstr(bytes(buffer[4:]),
-#                                                                                               unsigned=True))
-#                     case 2:
-#                         ...  # whole current buffer and next index is index tuple
-#                         # (buffer, None), then in next iteration change index[1] to the next starting index.
-#                         cur_idx = (self.__helpers(which='long_from_bstr')(bytes(buffer), unsigned=True), None)
-#                     case _:
-#                         if self.strict:
-#                             raise L2DBError(f"DB_INDEX_TYPE of {self.metadata['DB_INDEX_TYPE']} is not supported, \
-# expected one of {self.supported_index_types}!")
-#
-#             elif len(buffer) == (8 + 33) or buffer[-1] == 0:
-#                 if len(buffer) > 8:  # Avoid taking an index number with null-bytes in it as the end of the key's name!
-#                     key = ''.join([chr(l) for l in buffer[8:-1]])
-#                     self.valtable[key] = cur_idx
-#                     if self.metadata['DB_INDEX_TYPE'] == 2:
-#                         try:
-#                             self.valtable[prev_valtable_entry] = (self.valtable[prev_valtable_entry][0], cur_idx[0])
-#                         except KeyError as e:
-#                             if not str(e) == "''":
-#                                 raise
-#                         prev_valtable_entry = key
-#                     buffer = []
-#
-#         # Body
-#         body = __database[64 + self.metadata['VALTABLE_LEN']:]
-#
-#         # - INSERT: correct last index in index if type 2 - #
-#         if self.metadata['DB_INDEX_TYPE'] == 2:
-#             for key in self.valtable:
-#                 if self.valtable[key][1] == None:
-#                     self.valtable[key] = (self.valtable[key][0], len(body))
-#         # - INSERT END: correct last index in index if type 2 - #
-#
-#         match self.metadata['DB_INDEX_TYPE']:
-#             case dbindextype if dbindextype in (1, 2):
-#                 self.__db = {
-#                     keyname: body[self.valtable[keyname][0]:self.valtable[keyname][1]]
-#                     for keyname in self.valtable}
-#
-#             case _:
-#                 if self.strict:
-#                     raise L2DBError(f"DB_INDEX_TYPE of {self.metadata['DB_INDEX_TYPE']} is not supported, \
-# expected one of {self.supported_index_types}!")
-#         if not self.metadata['RAW_VALUES']:
-#             helpers = self.__helpers()
-#             for key in self.__db:
-#                 try:
-#                     match self.__db[key].split(b'\x00', 1)[0]:
-#                         case req_type if req_type in (b'int', b'int32'):
-#                             self.__db[key] = helpers['int_from_bstr'](self.__db[key].split(b'\x00', 1)[1])
-#                         case req_type if req_type in (b'long', b'int64'):
-#                             self.__db[key] = helpers['bstr_to_long'](self.__db[key].split(b'\x00', 1)[1])
-#                         case req_type if req_type in (b'uint', b'uint32'):
-#                             self.__db[key] = helpers['int_from_bstr'](self.__db[key].split(b'\x00', 1)[1], unsigned=True)
-#                         case req_type if req_type in (b'ulong', b'uint64'):
-#                             self.__db[key] = helpers['bstr_to_long'](self.__db[key].split(b'\x00', 1)[1], unsigned=True)
-#                         case b'float':
-#                             self.__db[key] = helpers['bstr_to_float'](self.__db[key].split(b'\x00', 1)[1])
-#                         case b'double':
-#                             self.__db[key] = helpers['bstr_to_double'](self.__db[key].split(b'\x00', 1)[1])
-#                         case b'str':
-#                             self.__db[key] = ''.join([chr(b) for b in self.__db[key].split(b'\x00', 1)[1]])
-#                         case b'bool':
-#                             self.__db[key] = not not self.__db[key].split(b'\x00', 1)[1][
-#                                 0]  # Invert 2 times to get a boolean from the byte's integer value
-#                         case req_type if req_type in (b'', b'bstr', b'bytes'):
-#                             self.__db[key] = self.__db[key].split(b'\x00', 1)[
-#                                 1]  # Just cut away the leading null-byte to not destroy the actual value
-#                 except Exception as e:
-#                     print(f"Couldn't assign type to entry '{key}' because of a {type(e).__name__}: {e}")
+        # Valtable
+        valtable = database[64:64 + self.metadata['VALTABLE_LEN']]
+
+        buffer = []  # Create a buffer for the below for loop to store its bytes in
+        self.valtable.clear()  # Remove all contents from the current valtable
+        if self.metadata['DB_INDEX_TYPE'] == 2:
+            prev_valtable_entry = ''
+        cur_idx = (0, None)
+        for byte in valtable:
+            buffer.append(byte)
+            if len(buffer) == 8:
+                match self.metadata['DB_INDEX_TYPE']:
+                    case 1:
+                        int_from_bstr = self.__helpers(which='int_from_bstr')
+                        cur_idx = (int_from_bstr(bytes(buffer[:4]), unsigned=True), int_from_bstr(bytes(buffer[4:]),
+                                                                                              unsigned=True))
+                    case 2:
+                        ...  # whole current buffer and next index is index tuple
+                        # (buffer, None), then in next iteration change index[1] to the next starting index.
+                        cur_idx = (self.__helpers(which='long_from_bstr')(bytes(buffer), unsigned=True), None)
+                    case _:
+                        if self.strict:
+                            raise L2DBError(f"DB_INDEX_TYPE of {self.metadata['DB_INDEX_TYPE']} is not supported, \
+expected one of {self.supported_index_types}!")
+
+            elif (buffer[-1] == 0) and (len(buffer) > 8):  # Avoid taking an index number with null-bytes in it as the end of the key's name!
+                key = ''.join([chr(l) for l in buffer[8:-1]])
+                self.valtable[key] = cur_idx
+                if self.metadata['DB_INDEX_TYPE'] == 2:
+                    try:
+                        self.valtable[prev_valtable_entry] = (self.valtable[prev_valtable_entry][0], cur_idx[0])
+                    except KeyError as e:
+                        if not str(e) == "''":
+                            raise
+                    prev_valtable_entry = key
+                buffer = []
+
+        # Body
+        body = database[64 + self.metadata['VALTABLE_LEN']:]
+
+        # - INSERT: correct last index in index if type 2 - #
+        if self.metadata['DB_INDEX_TYPE'] == 2:
+            for key in self.valtable:
+                if self.valtable[key][1] == None:
+                    self.valtable[key] = (self.valtable[key][0], len(body))
+        # - INSERT END: correct last index in index if type 2 - #
+
+        match self.metadata['DB_INDEX_TYPE']:
+            case dbindextype if dbindextype in (1, 2):
+                self.db = {
+                    keyname: body[self.valtable[keyname][0]:self.valtable[keyname][1]]
+                    for keyname in self.valtable}
+
+            case _:
+                if self.strict:
+                    raise L2DBError(f"DB_INDEX_TYPE of {self.metadata['DB_INDEX_TYPE']} is not supported, \
+expected one of {self.supported_index_types}!")
+        if not self.metadata['RAW_VALUES']:
+            helpers = self.__helpers()
+            for key in self.db:
+                try:
+                    match self.db[key].split(b'\x00', 1)[0]:
+                        case req_type if req_type in (b'int', b'int32'):
+                            self.db[key] = helpers['int_from_bstr'](self.db[key].split(b'\x00', 1)[1])
+                        case req_type if req_type in (b'long', b'int64'):
+                            self.db[key] = helpers['bstr_to_long'](self.db[key].split(b'\x00', 1)[1])
+                        case req_type if req_type in (b'uint', b'uint32'):
+                            self.db[key] = helpers['int_from_bstr'](self.db[key].split(b'\x00', 1)[1], unsigned=True)
+                        case req_type if req_type in (b'ulong', b'uint64'):
+                            self.db[key] = helpers['bstr_to_long'](self.db[key].split(b'\x00', 1)[1], unsigned=True)
+                        case b'float':
+                            self.db[key] = helpers['bstr_to_float'](self.db[key].split(b'\x00', 1)[1])
+                        case b'double':
+                            self.db[key] = helpers['bstr_to_double'](self.db[key].split(b'\x00', 1)[1])
+                        case b'str':
+                            self.db[key] = ''.join([chr(b) for b in self.db[key].split(b'\x00', 1)[1]])
+                        case b'bool':
+                            self.db[key] = not not self.db[key].split(b'\x00', 1)[1][
+                                0]  # Invert 2 times to get a boolean from the byte's integer value
+                        case req_type if req_type in (b'', b'bstr', b'bytes'):
+                            self.db[key] = self.db[key].split(b'\x00', 1)[
+                                1]  # Just cut away the leading null-byte to not destroy the actual value
+                        case req_type if req_type in self.__registered_types:
+                            str_req_type = self.__helpers(which='bstr_to_str')(req_type)
+                            for reg_type in self.__registered_types:
+                                if str_req_type==self.__registered_types[reg_type]:
+                                    self.db[key] = self.__registered_types[reg_type][1](self.db[key].split(b'\x00', 1)[1])
+                except Exception as e:
+                    print(f"Couldn't assign type to entry '{key}' because of a {type(e).__name__}: {e}")
+        if self.metadata['VER']>1:
+            self.db = self.__helpers(which='deepen_dict')(self.db)
 
     def create_db(self):
         """Creates a __database file in a binary string and returns it."""
         valtable = b''
         body = b''
         helpers = self.__helpers()
+        flat_db = helpers['flatten_dict'](self.db) if self.metadata['VER']>1 else self.db.copy()
 
         def to_bytes(obj):
             "Wrapper to many of the above-defined helper functions"
@@ -285,7 +328,7 @@ returns a dictionary containing all the name-value pairs from the __database. ""
                         else b'str\x00' + helpers['bstr_from_str'](obj)
                 case bool(): # bool
                     return (b'\x01' if obj else b'\x00') if self.metadata['RAW_VALUES'] else (b'bool\x00\x01' if obj else b'bool\x00\x00')
-                case 0:  # int
+                case int():  # int
                     try:
                         return helpers['bstr_from_int'](obj) if self.metadata['RAW_VALUES'] \
                             else b'int\x00' + helpers['bstr_from_int'](obj)
@@ -300,34 +343,39 @@ returns a dictionary containing all the name-value pairs from the __database. ""
                                 f'Error while trying to convert {obj} to binary as signed long long:\n{type(e2).__name__}: {e2}')
                             return helpers['bstr_from_long'](obj, unsigned=True) if self.metadata['RAW_VALUES'] \
                                 else b'ulong\x00' + helpers['bstr_from_long'](obj, unsigned=True)
-                case 0.0:  # float
+                case float():  # float
                     try:
                         return helpers['bstr_from_float'](obj) if self.metadata['RAW_VALUES'] \
                             else b'float\x00' + helpers['bstr_from_float'](obj)
                     except OverflowError:
                         return helpers['bstr_from_double'](obj) if self.metadata['RAW_VALUES'] \
                             else b'double\x00' + helpers['bstr_from_double'](obj)
-                case b'':  # bytes
+                case bytes():  # bytes
                     return obj if self.metadata['RAW_VALUES'] else b'\x00' + obj
                 case _:  # If the type isn't one of the directly supported above...
+                    if not self.metadata['RAW_VALUES']: # ... try it with one of the custom added types ...
+                        for reg_type in self.__registered_types:
+                            if type(_).__name__==self.__registered_types[reg_type]:
+                                return self.__helpers(which='bstr_from_str')(reg_type)+b'\x00'\
+                                    +self.__registered_types[reg_type][0](obj)
                     return helpers['bstr_from_str'](repr(obj)) if self.metadata['RAW_VALUES'] \
-                        else b'str\x00' + helpers['bstr_from_str'](repr(obj))  # ...just represent it as a string
+                        else b'str\x00' + helpers['bstr_from_str'](repr(obj))  # ...or just represent it as a string
 
         # Valtable+Body
-        for key in self.db:
+        for key in flat_db:
             # Note that non-string keys will be stored as string keys!
             match self.metadata['DB_INDEX_TYPE']:
                 case 1:
-                    body_segment = to_bytes(self.db[key])
+                    body_segment = to_bytes(flat_db[key])
                     valtable += (helpers['bstr_from_int'](                    len(body), unsigned=True) \
                                + helpers['bstr_from_int'](len(body_segment) + len(body), unsigned=True) \
                                + helpers['bstr_from_str'](str(key)) + b'\x00')
                 case 2:
                     valtable += (helpers['bstr_from_long'](len(body), unsigned=True)
                                + helpers['bstr_from_str'] (str(key)) + b'\x00')
-                    body_segment = to_bytes(self.db[key])
+                    body_segment = to_bytes(flat_db[key])
             body += body_segment
-        print(self.db)  # debug
+        #print(flat_db) #debug
         self.update_metadata('VALTABLE_LEN', len(valtable))
 
         # Metadata
@@ -473,7 +521,7 @@ if __name__ == '__main__':
     try:
         db = L2DB({'hello':'world','key':'value','some number':42,'Does bool exist?':True})
         print(f'db =           {db}\ndb.metadata =  {db.metadata}\ndb.__database =  {db.database}')
-        print(f'db2 =          {(db2:=L2DB(db.create_db()))}\ndb.metadata =  {db.metadata}\ndb2.__database = {db2.database}')
+        print(f'db2 =          {(db2:=L2DB(db.create_db()))}\ndb2.metadata = {db2.metadata}\ndb2.__database = {db2.database}')
     except Exception as e:
         print('''Could unfortunately not demo the __database functionality!
 The following technical mumbo jumbo should show what went wrong:''')

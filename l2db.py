@@ -13,7 +13,7 @@ In the value_table, two 4-byte (32-bit) numbers for each value represent the sta
 up to 32 usable bytes per name. If the index is immediately followed by a null-byte the index is used as the name.
 Alternatively, 8 bytes represent the index and the end is then the byte before the next index or the
 file end (DB_INDEX_TYPE:2). A DB_INDEX_TYPE of 0 is invalid and as of now also anything above 2; they will default to 2.
-Type declarations occur in the value itslef, with ASCII-encoded type name, separated by null from the value.
+Type declarations occur in the value itself, with ASCII-encoded type name, separated by null from the value.
 To get a bstring without type declaration, just begin the value with a null character,
 which will be stripped away and the resulting 0-character type declaration will cause the value
 to be stored as the raw binary value.
@@ -33,7 +33,7 @@ class L2DBSyntaxError(SyntaxError):
 
 
 class L2DB:
-    """L2DB - The database class that implements reading and writing of L2DB files."""
+    """L2DB - The __database class that implements reading and writing of L2DB files."""
 
     def __init__(self, source={}, ign_corrupted_source=False):
         """Initializes the L2DB object."""
@@ -42,17 +42,17 @@ class L2DB:
         self.__strict = True
         self.__registered_types = {}
         self.strict = not ign_corrupted_source
-        self.db = None
+        self.__db = None
         # Default metadata, only kept when L2DB created from dict:
         self.metadata = {'VER': self.implementation_version, 'VALTABLE_LEN': 0, 'DB_INDEX_TYPE': 2, 'RAW_VALUES': False}
         self.valtable = {}
-        self.database = {}
+        self.__database = {}
         if type(source) == bytes:
             self.eval_db(source)
         elif type(source) == str:
             self.load_db(source)
         elif type(source) == dict:
-            self.db = source
+            self.__db = source
         else:
             raise TypeError(f"unsupported source type for l2db: '{type(source).__name__}' (expected 'str' or 'bytes')!")
 
@@ -73,7 +73,7 @@ class L2DB:
         >>> def tobj_frombin(bstr):
         ...     return TestObject()
         ...
-        >>> database.register_type('TestObject', tobj_tobin, tobj_frombin)
+        >>> __database.register_type('TestObject', tobj_tobin, tobj_frombin)
         {'objtype': 'TestObject', 'ftobin': <function tobj_tobin at 0x000000000000>,
             'ffrombin': <function tobj_frombin at 0x000000000000>}
         """
@@ -88,7 +88,7 @@ but can be set to False (complain only about critical errors) using this method.
     strict = property((lambda self: bool(self.__strict)), __set_strictness)
 
     # Indicates the version of the implementation:
-    implementation_version = property(lambda self: 2)
+    implementation_version = property(lambda self: 3)
     # Indicates what index types are supported by this implementation of L2DB:
     supported_index_types = property(lambda self: (1, 2))
 
@@ -137,7 +137,7 @@ but can be set to False (complain only about critical errors) using this method.
             return struct.pack('>d', dnum)
 
         def ret_as_dict(obj):
-            return obj.db if type(obj) == L2DB else obj if type(obj) == dict else dict(obj)
+            return obj.__db if type(obj) == L2DB else obj if type(obj) == dict else dict(obj)
 
         def flatten_dict(d, sep='/'):
             flat_dict = {}
@@ -186,27 +186,27 @@ but can be set to False (complain only about critical errors) using this method.
             (expected 'NoneType', 'str', 'tuple', list', 'set' or 'frozenset')")
 
     def __set_db(self, db):
-        """Changes the database dict of the L2DB object directly but enforces a type of 'dict'."""
-        self.db = dict(db)
+        """Changes the __database dict of the L2DB object directly but enforces a type of 'dict'."""
+        self.__db = dict(db)
 
-    database = property((lambda self: self.db), __set_db)
+    __database = property((lambda self: self.__db), __set_db)
     magic = property(lambda self: b'\x88L2DB\x00\x00\x00')
 
     def load_db(self, file):
-        """Reads the database file whose name is provided and stores and
-returns a dictionary containing all the name-value pairs from the database. """
+        """Reads the __database file whose name is provided and stores and
+returns a dictionary containing all the name-value pairs from the __database. """
         with open(file, 'rb') as dbf:  # dbf: DataBase-File
             return self.eval_db(dbf.read())
 
     def write_db(self, file):
-        """Writes the database to the file with the given path. Returns the binary representation of the file."""
+        """Writes the __database to the file with the given path. Returns the binary representation of the file."""
         db = self.create_db()
         with open(file, 'wb') as dbf:  # dbf: DataBase-File
             dbf.write(db)
         return db
 
     def eval_db(self, database):
-        """Reads the database from the provided bytestring."""
+        """Reads the __database from the provided bytestring."""
         # Metadata
         metadata = database[0:64]
         if self.strict and metadata[0:8] not in (b'\x88L2DB\x00\x00\x00', b'\x88L2020DB'):
@@ -270,7 +270,7 @@ expected one of {self.supported_index_types}!")
 
         match self.metadata['DB_INDEX_TYPE']:
             case dbindextype if dbindextype in (1, 2):
-                self.db = {
+                self.__db = {
                     keyname: body[self.valtable[keyname][0]:self.valtable[keyname][1]]
                     for keyname in self.valtable}
 
@@ -280,45 +280,45 @@ expected one of {self.supported_index_types}!")
 expected one of {self.supported_index_types}!")
         if not self.metadata['RAW_VALUES']:
             helpers = self.__helpers()
-            for key in self.db:
+            for key in self.__db:
                 try:
-                    match self.db[key].split(b'\x00', 1)[0]:
+                    match self.__db[key].split(b'\x00', 1)[0]:
                         case req_type if req_type in (b'int', b'int32'):
-                            self.db[key] = helpers['int_from_bstr'](self.db[key].split(b'\x00', 1)[1])
+                            self.__db[key] = helpers['int_from_bstr'](self.__db[key].split(b'\x00', 1)[1])
                         case req_type if req_type in (b'long', b'int64'):
-                            self.db[key] = helpers['bstr_to_long'](self.db[key].split(b'\x00', 1)[1])
+                            self.__db[key] = helpers['bstr_to_long'](self.__db[key].split(b'\x00', 1)[1])
                         case req_type if req_type in (b'uint', b'uint32'):
-                            self.db[key] = helpers['int_from_bstr'](self.db[key].split(b'\x00', 1)[1], unsigned=True)
+                            self.__db[key] = helpers['int_from_bstr'](self.__db[key].split(b'\x00', 1)[1], unsigned=True)
                         case req_type if req_type in (b'ulong', b'uint64'):
-                            self.db[key] = helpers['bstr_to_long'](self.db[key].split(b'\x00', 1)[1], unsigned=True)
+                            self.__db[key] = helpers['bstr_to_long'](self.__db[key].split(b'\x00', 1)[1], unsigned=True)
                         case b'float':
-                            self.db[key] = helpers['bstr_to_float'](self.db[key].split(b'\x00', 1)[1])
+                            self.__db[key] = helpers['bstr_to_float'](self.__db[key].split(b'\x00', 1)[1])
                         case b'double':
-                            self.db[key] = helpers['bstr_to_double'](self.db[key].split(b'\x00', 1)[1])
+                            self.__db[key] = helpers['bstr_to_double'](self.__db[key].split(b'\x00', 1)[1])
                         case b'str':
-                            self.db[key] = ''.join([chr(b) for b in self.db[key].split(b'\x00', 1)[1]])
+                            self.__db[key] = ''.join([chr(b) for b in self.__db[key].split(b'\x00', 1)[1]])
                         case b'bool':
-                            self.db[key] = not not self.db[key].split(b'\x00', 1)[1][
+                            self.__db[key] = not not self.__db[key].split(b'\x00', 1)[1][
                                 0]  # Invert 2 times to get a boolean from the byte's integer value
                         case req_type if req_type in (b'', b'bstr', b'bytes'):
-                            self.db[key] = self.db[key].split(b'\x00', 1)[
+                            self.__db[key] = self.__db[key].split(b'\x00', 1)[
                                 1]  # Just cut away the leading null-byte to not destroy the actual value
                         case req_type if req_type in self.__registered_types:
                             str_req_type = self.__helpers(which='bstr_to_str')(req_type)
                             for reg_type in self.__registered_types:
                                 if str_req_type==self.__registered_types[reg_type]:
-                                    self.db[key] = self.__registered_types[reg_type][1](self.db[key].split(b'\x00', 1)[1])
+                                    self.__db[key] = self.__registered_types[reg_type][1](self.__db[key].split(b'\x00', 1)[1])
                 except Exception as e:
                     print(f"Couldn't assign type to entry '{key}' because of a {type(e).__name__}: {e}")
         if self.metadata['VER']>1:
-            self.db = self.__helpers(which='deepen_dict')(self.db)
+            self.__db = self.__helpers(which='deepen_dict')(self.__db)
 
     def create_db(self):
-        """Creates a database file in a binary string and returns it."""
+        """Creates a __database file in a binary string and returns it."""
         valtable = b''
         body = b''
         helpers = self.__helpers()
-        flat_db = helpers['flatten_dict'](self.db) if self.metadata['VER']>1 else self.db.copy()
+        flat_db = helpers['flatten_dict'](self.__db) if self.metadata['VER'] > 1 else self.__db.copy()
 
         def to_bytes(obj):
             "Wrapper to many of the above-defined helper functions"
@@ -388,8 +388,8 @@ expected one of {self.supported_index_types}!")
         return metadata + valtable + body
 
     def update_db(self, key, value):
-        """Updates the database key `key` with the value `value` and returns the changed key:value pair."""
-        self.database.update({key: value})
+        """Updates the __database key `key` with the value `value` and returns the changed key:value pair."""
+        self.__database.update({key: value})
         return {key: value}
 
     def update_metadata(self, property, value):
@@ -407,20 +407,20 @@ expected one of {self.supported_index_types}!")
 
     def __len__(self):
         """Returns the amount of key:value pairs stored in the L2DB object."""
-        return len(self.db)
+        return len(self.__db)
 
     def __getitem__(self, item):
-        """Gets the database dict's value corresponding to the key `key`."""
-        return self.db[item]
+        """Gets the __database dict's value corresponding to the key `key`."""
+        return self.__db[item]
 
     def __setitem__(self, key, value):
-        """Sets the database dict's value corresponding to the key `key` to the value `value`."""
-        self.db[key] = value
-        return self.db[key]
+        """Sets the __database dict's value corresponding to the key `key` to the value `value`."""
+        self.__db[key] = value
+        return self.__db[key]
 
     def __iter__(self):
-        """The database dict's __iter__ method."""
-        return self.db.__iter__()
+        """The __database dict's __iter__ method."""
+        return self.__db.__iter__()
 
     def __bytes__(self):
         """Returns a byte-string with the current status of the L2DB object in it."""
@@ -429,15 +429,15 @@ expected one of {self.supported_index_types}!")
     def __add__(self, other):
         """Concatenates the L2DB with another L2DB or dict and returns the result."""
         new_l2db = L2DB(source=b'', ign_corrupted_source=True)
-        new_l2db.db.update(self.db)
-        new_l2db.db.update(self.__helpers(which='ret_as_dict')(other))
+        new_l2db.__db.update(self.__db)
+        new_l2db.__db.update(self.__helpers(which='ret_as_dict')(other))
         return new_l2db
 
     def __sub__(self, other):
         """Removes all keys found in `other` from the L2DB object and returns the result."""
         new_l2db = L2DB(source=b'', ign_corrupted_source=True)
-        new_l2db.db = {key: self.db[key] for key in self.db if key in
-                       (self.__helpers(which='ret_as_dict')(other))}
+        new_l2db.__db = {key: self.__db[key] for key in self.__db if key in
+                         (self.__helpers(which='ret_as_dict')(other))}
         return new_l2db
 
     def __radd__(self, other):
@@ -450,12 +450,12 @@ expected one of {self.supported_index_types}!")
 
     def __iadd__(self, other):
         """Concatenates the L2DB with another L2DB or dict and stores and returns the result."""
-        self.db = (self + other).db
+        self.__db = (self + other).__db
         return self
 
     def __isub__(self, other):
         """Removes all keys found in `other` from the L2DB object andstores and returns the result."""
-        self.db = (self - other).db
+        self.__db = (self - other).__db
         return self
 
     def __hex__(self):
@@ -480,7 +480,7 @@ expected one of {self.supported_index_types}!")
 
     def __eq__(self, other):
         """Checks for equality of the L2DB object and another or dict and returns the result."""
-        return self.db == (self.__helpers(which='ret_as_dict')(other))
+        return self.__db == (self.__helpers(which='ret_as_dict')(other))
 
     def __ne__(self, other):
         """Checks for unequality of the L2DB object and another or dict and returns the result."""
@@ -488,25 +488,25 @@ expected one of {self.supported_index_types}!")
 
     def __lt__(self, other):
         """Checks if the L2DB object has less keys in it than the other or dict and returns the result."""
-        return len(self.db) < len(self.__helpers(which='ret_as_dict')(other))
+        return len(self.__db) < len(self.__helpers(which='ret_as_dict')(other))
 
     def __gt__(self, other):
         """Checks if the L2DB object has more keys in it than the other or dict and returns the result."""
-        return len(self.db) > len(self.__helpers(which='ret_as_dict')(other))
+        return len(self.__db) > len(self.__helpers(which='ret_as_dict')(other))
 
     def __le__(self, other):
         """Checks if the L2DB object has less or equally many keys in it as/than the other or dict \
 and returns the result."""
-        return len(self.db) <= len(self.__helpers(which='ret_as_dict')(other))
+        return len(self.__db) <= len(self.__helpers(which='ret_as_dict')(other))
 
     def __ge__(self, other):
         """Checks if the L2DB object has more or equally many keys in it as/than the other or dict \
 and returns the result."""
-        return len(self.db) >= len(self.__helpers(which='ret_as_dict')(other))
+        return len(self.__db) >= len(self.__helpers(which='ret_as_dict')(other))
 
     def __contains__(self, item):
         """Returns True if the key `item` is found in the L2DB, otherwise False."""
-        return item in self.db
+        return item in self.__db
 
     def __copy__(self):
         """Returns a fresh copy of the current state of the L2DB object."""
@@ -520,10 +520,10 @@ and returns the result."""
 if __name__ == '__main__':
     try:
         db = L2DB({'hello':'world','key':'value','some number':42,'Does bool exist?':True})
-        print(f'db =           {db}\ndb.metadata =  {db.metadata}\ndb.database =  {db.database}')
-        print(f'db2 =          {(db2:=L2DB(db.create_db()))}\ndb2.metadata = {db2.metadata}\ndb2.database = {db2.database}')
+        print(f'db =           {db}\ndb.metadata =  {db.metadata}\ndb.__database =  {db._L2DB__database}')
+        print(f'db2 =          {(db2:=L2DB(db.create_db()))}\ndb2.metadata = {db2.metadata}\ndb2.__database = {db2._L2DB__database}')
     except Exception as e:
-        print('''Could unfortunately not demo the database functionality!
+        print('''Could unfortunately not demo the __database functionality!
 The following technical mumbo jumbo should show what went wrong:''')
         from traceback import format_exc as show_last_traceback
 
