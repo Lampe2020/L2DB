@@ -19,6 +19,8 @@ which will be stripped away and the resulting 0-character type declaration will 
 to be stored as the raw binary value.
 """
 
+#TODO: unexpose internal dict, resturcture to flat /-separated structure
+
 import collections.abc as collections
 import struct
 
