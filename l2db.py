@@ -50,9 +50,9 @@ class L2DB:
         self.valtable = {}
         self.__database = {}
         if type(source) == bytes:
-            self.eval_db(source)
+            self.init_db(source)
         elif type(source) == str:
-            self.load_db(source)
+            self.init_dbf(source)
         elif type(source) == dict:
             self.__db = source
         else:
@@ -194,34 +194,34 @@ but can be set to False (complain only about critical errors) using this method.
     __database = property((lambda self: self.__db), __set_db)
     magic = property(lambda self: b'\x88L2DB\x00\x00\x00')
 
-    def load_db(self, file):
-        """Reads the __database file whose name is provided and stores and
-returns a dictionary containing all the name-value pairs from the __database. """
+    def init_dbf(self, file):
+        """Reads the database file whose name is provided and stores and
+returns a dictionary containing all the name-value pairs from the database. """
         with open(file, 'rb') as dbf:  # dbf: DataBase-File
-            return self.eval_db(dbf.read())
+            return self.init_db(dbf.read())
 
-    def write_db(self, file):
-        """Writes the __database to the file with the given path. Returns the binary representation of the file."""
-        db = self.create_db()
+    def syncout_dbf(self, file):
+        """Writes the database to the file with the given path. Returns the binary representation of the file."""
+        db = self.syncout_db()
         with open(file, 'wb') as dbf:  # dbf: DataBase-File
             dbf.write(db)
         return db
 
-    def eval_db(self, database):
+    def init_db(self, database):
         """Reads the __database from the provided bytestring."""
         # Metadata
         metadata = database[0:64]
         if self.strict and metadata[0:8] not in (b'\x88L2DB\x00\x00\x00', b'\x88L2020DB'):
             raise L2DBSyntaxError(f"The magic bytes are incorrect: {metadata[0:8]} \
 (expected b'\\x88L2DB\\x00\\x00\\x00' or b'\\x88L2020DB')")
-        self.update_metadata('VER', metadata[8])  # Should return the single byte's value as int
-        self.update_metadata('VALTABLE_LEN', self.__helpers(which='int_from_bstr')(metadata[9:13], unsigned=True))
+        self.__update_metadata('VER', metadata[8])  # Should return the single byte's value as int
+        self.__update_metadata('VALTABLE_LEN', self.__helpers(which='int_from_bstr')(metadata[9:13], unsigned=True))
         if self.strict and metadata[13] not in self.supported_index_types:
             raise L2DBError(f"DB_INDEX_TYPE of {metadata[13]} is not supported, \
 expected one of {self.supported_index_types}!")
         else:
-            self.update_metadata('DB_INDEX_TYPE', metadata[13])  # Should return the single byte's value as int
-        self.update_metadata('RAW_VALUES', (not not metadata[14]))
+            self.__update_metadata('DB_INDEX_TYPE', metadata[13])  # Should return the single byte's value as int
+        self.__update_metadata('RAW_VALUES', (not not metadata[14]))
 
         # Valtable
         valtable = database[64:64 + self.metadata['VALTABLE_LEN']]
@@ -315,7 +315,7 @@ expected one of {self.supported_index_types}!")
         if self.metadata['VER']>1:
             self.__db = self.__helpers(which='deepen_dict')(self.__db)
 
-    def create_db(self):
+    def syncout_db(self):
         """Creates a __database file in a binary string and returns it."""
         valtable = b''
         body = b''
@@ -378,7 +378,7 @@ expected one of {self.supported_index_types}!")
                     body_segment = to_bytes(flat_db[key])
             body += body_segment
         #print(flat_db) #debug
-        self.update_metadata('VALTABLE_LEN', len(valtable))
+        self.__update_metadata('VALTABLE_LEN', len(valtable))
 
         # Metadata
         metadata = list(self.magic) + [0 for x in range(64 - len(self.magic))]
@@ -389,19 +389,19 @@ expected one of {self.supported_index_types}!")
 
         return metadata + valtable + body
 
-    def update_db(self, key, value):
+    def update(self, key, value):
         """Updates the __database key `key` with the value `value` and returns the changed key:value pair."""
         self.__database.update({key: value})
         return {key: value}
 
-    def update_metadata(self, property, value):
+    def __update_metadata(self, property, value):
         """Updates the metadata key `key` with the value `value` and returns the changed key:value pair."""
         self.metadata.update({property: value})
         return {property: value}
 
     def __repr__(self):
         """Returns a reusable string representation of the L2DB object."""
-        return f'L2DB(source={self.create_db()})'
+        return f'L2DB(source={self.syncout_db()})'
 
     def __str__(self):
         """Returns a nice and short string representation of the L2DB object."""
@@ -426,7 +426,7 @@ expected one of {self.supported_index_types}!")
 
     def __bytes__(self):
         """Returns a byte-string with the current status of the L2DB object in it."""
-        return self.create_db()
+        return self.syncout_db()
 
     def __add__(self, other):
         """Concatenates the L2DB with another L2DB or dict and returns the result."""
@@ -444,11 +444,11 @@ expected one of {self.supported_index_types}!")
 
     def __radd__(self, other):
         """Concatenates another L2DB or dict with the L2DB and returns the result."""
-        return self + other
+        return other + self
 
     def __rsub__(self, other):
-        """Removes all keys found in `other` from the L2DB object and returns the result."""
-        return self - other
+        """Removes all keys found in the L2DB object from `other` and returns the result."""
+        return other - self
 
     def __iadd__(self, other):
         """Concatenates the L2DB with another L2DB or dict and stores and returns the result."""
@@ -462,7 +462,7 @@ expected one of {self.supported_index_types}!")
 
     def __hex__(self):
         """Returns a hexadecimal representation of a byte-string containing the current state of the L2DB object."""
-        return f"0x{''.join([hex(b)[2] for b in self.create_db()])}"
+        return f"0x{''.join([hex(b)[2] for b in self.syncout_db()])}"
 
     def __oct__(self):
         """Returns a octal representation of a byte-string containing the current state of the L2DB object."""
@@ -506,13 +506,13 @@ and returns the result."""
 and returns the result."""
         return len(self.__db) >= len(self.__helpers(which='ret_as_dict')(other))
 
-    def __contains__(self, item):
-        """Returns True if the key `item` is found in the L2DB, otherwise False."""
-        return item in self.__db
+    def __contains__(self, key):
+        """Returns True if the specified key is found in the L2DB, otherwise False."""
+        return key in self.__db
 
     def __copy__(self):
         """Returns a fresh copy of the current state of the L2DB object."""
-        return L2DB(source=self.create_db())
+        return L2DB(source=self.syncout_db())
 
     def __deepcopy__(self, memodict={}):
         """Returns a fresh copy of the current state of the L2DB object. Ignores the argument memodict."""
@@ -523,7 +523,7 @@ if __name__ == '__main__':
     try:
         db = L2DB({'hello':'world','key':'value','some number':42,'Does bool exist?':True})
         print(f'db =           {db}\ndb.metadata =  {db.metadata}\ndb.__database =  {db._L2DB__database}')
-        print(f'db2 =          {(db2:=L2DB(db.create_db()))}\ndb2.metadata = {db2.metadata}\ndb2.__database = {db2._L2DB__database}')
+        print(f'db2 =          {(db2:=L2DB(db.syncout_db()))}\ndb2.metadata = {db2.metadata}\ndb2.__database = {db2._L2DB__database}')
     except Exception as e:
         print('''Could unfortunately not demo the __database functionality!
 The following technical mumbo jumbo should show what went wrong:''')
