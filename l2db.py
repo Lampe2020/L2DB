@@ -2,24 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-The first 64 bytes of the file are reserved for metadata, 8 of which define the value_table's length after the metadata.
-The first 8 bytes are _always_ b'\\x88L2DB\\x00\\x00\\x00' or b'\\x88L2020DB'.
-Length of value_table defined in 32-bit number (4 bytes) (There should never be the need for a 4GB+ big index listing!).
-All indexes are beginning to be counted after that.
-For example, with a value_table length of 12, the byte at real index 100 is called
-index ((real_index:100)-(metadata_length:const:64)-(value_table_length=12)) = 14.
-In the value_table, two 4-byte (32-bit) numbers for each value represent the start and end index of that value
-(DB_INDEX_TYPE:1). The names of all values are immediately after their index and null-terminated,
-up to 32 usable bytes per name. If the index is immediately followed by a null-byte the index is used as the name.
-Alternatively, 8 bytes represent the index and the end is then the byte before the next index or the
-file end (DB_INDEX_TYPE:2). A DB_INDEX_TYPE of 0 is invalid and as of now also anything above 2; they will default to 2.
-Type declarations occur in the value itself, with ASCII-encoded type name, separated by null from the value.
-To get a bstring without type declaration, just begin the value with a null character,
-which will be stripped away and the resulting 0-character type declaration will cause the value
-to be stored as the raw binary value.
+The L2DB database format, version 3. (c) Lampe2020 <kontakt@lampe2020.de>
+L2DB supports the following data types:
+    * keys: string
+    * Values: integer (32-bit), long (64-bit), float (32-bit), double (64-bit), raw (binary data)
 """
-
-#TODO: unexpose internal dict, resturcture to flat /-separated structure
 
 import collections.abc as collections
 import struct
@@ -35,7 +22,7 @@ class L2DBSyntaxError(SyntaxError):
 
 
 class L2DB:
-    """L2DB - The __database class that implements reading and writing of L2DB files."""
+    """L2DB - The database class that implements reading and writing of L2DB files."""
 
     def __init__(self, source={}, ign_corrupted_source=False):
         """Initializes the L2DB object."""
@@ -188,7 +175,7 @@ but can be set to False (complain only about critical errors) using this method.
             (expected 'NoneType', 'str', 'tuple', list', 'set' or 'frozenset')")
 
     def __set_db(self, db):
-        """Changes the __database dict of the L2DB object directly but enforces a type of 'dict'."""
+        """Changes the database dict of the L2DB object directly but enforces a type of 'dict'."""
         self.__db = dict(db)
 
     __database = property((lambda self: self.__db), __set_db)
@@ -208,12 +195,12 @@ returns a dictionary containing all the name-value pairs from the database. """
         return db
 
     def init_db(self, database):
-        """Reads the __database from the provided bytestring."""
+        """Reads the database from the provided bytestring."""
         # Metadata
         metadata = database[0:64]
-        if self.strict and metadata[0:8] not in (b'\x88L2DB\x00\x00\x00', b'\x88L2020DB'):
+        if self.strict and metadata[0:8] != b'\x88L2DB\x00\x00\x00':
             raise L2DBSyntaxError(f"The magic bytes are incorrect: {metadata[0:8]} \
-(expected b'\\x88L2DB\\x00\\x00\\x00' or b'\\x88L2020DB')")
+(expected b'\\x88L2DB\\x00\\x00\\x00')")
         self.__update_metadata('VER', metadata[8])  # Should return the single byte's value as int
         self.__update_metadata('VALTABLE_LEN', self.__helpers(which='int_from_bstr')(metadata[9:13], unsigned=True))
         if self.strict and metadata[13] not in self.supported_index_types:
@@ -238,7 +225,7 @@ expected one of {self.supported_index_types}!")
                     case 1:
                         int_from_bstr = self.__helpers(which='int_from_bstr')
                         cur_idx = (int_from_bstr(bytes(buffer[:4]), unsigned=True), int_from_bstr(bytes(buffer[4:]),
-                                                                                              unsigned=True))
+                                                                                                         unsigned=True))
                     case 2:
                         ...  # whole current buffer and next index is index tuple
                         # (buffer, None), then in next iteration change index[1] to the next starting index.
@@ -273,9 +260,8 @@ expected one of {self.supported_index_types}!")
         match self.metadata['DB_INDEX_TYPE']:
             case dbindextype if dbindextype in (1, 2):
                 self.__db = {
-                    keyname: body[self.valtable[keyname][0]:self.valtable[keyname][1]]
-                    for keyname in self.valtable}
-
+                    keyname: body[self.valtable[keyname][0]:self.valtable[keyname][1]] for keyname in self.valtable
+                }
             case _:
                 if self.strict:
                     raise L2DBError(f"DB_INDEX_TYPE of {self.metadata['DB_INDEX_TYPE']} is not supported, \
@@ -312,15 +298,12 @@ expected one of {self.supported_index_types}!")
                                     self.__db[key] = self.__registered_types[reg_type][1](self.__db[key].split(b'\x00', 1)[1])
                 except Exception as e:
                     print(f"Couldn't assign type to entry '{key}' because of a {type(e).__name__}: {e}")
-        if self.metadata['VER']>1:
-            self.__db = self.__helpers(which='deepen_dict')(self.__db)
 
     def syncout_db(self):
-        """Creates a __database file in a binary string and returns it."""
+        """Creates a database file in a binary string and returns it."""
         valtable = b''
         body = b''
         helpers = self.__helpers()
-        flat_db = helpers['flatten_dict'](self.__db) if self.metadata['VER'] > 1 else self.__db.copy()
 
         def to_bytes(obj):
             "Wrapper to many of the above-defined helper functions"
@@ -364,20 +347,20 @@ expected one of {self.supported_index_types}!")
                         else b'str\x00' + helpers['bstr_from_str'](repr(obj))  # ...or just represent it as a string
 
         # Valtable+Body
-        for key in flat_db:
+        for key in self.__db:
             # Note that non-string keys will be stored as string keys!
             match self.metadata['DB_INDEX_TYPE']:
                 case 1:
-                    body_segment = to_bytes(flat_db[key])
+                    body_segment = to_bytes(self.__db[key])
                     valtable += (helpers['bstr_from_int'](                    len(body), unsigned=True) \
                                + helpers['bstr_from_int'](len(body_segment) + len(body), unsigned=True) \
                                + helpers['bstr_from_str'](str(key)) + b'\x00')
                 case 2:
                     valtable += (helpers['bstr_from_long'](len(body), unsigned=True)
                                + helpers['bstr_from_str'] (str(key)) + b'\x00')
-                    body_segment = to_bytes(flat_db[key])
+                    body_segment = to_bytes(self.__db[key])
             body += body_segment
-        #print(flat_db) #debug
+        #print(self.__db) #debug
         self.__update_metadata('VALTABLE_LEN', len(valtable))
 
         # Metadata
@@ -390,14 +373,55 @@ expected one of {self.supported_index_types}!")
         return metadata + valtable + body
 
     def update(self, key, value):
-        """Updates the __database key `key` with the value `value` and returns the changed key:value pair."""
+        '''Updates/creates the database key `key` with the value `value` and returns the changed key:value pair.'''
         self.__database.update({key: value})
         return {key: value}
 
+    def bulk_update(self, kvdict):
+        '''Updates/creates the given database keys with the given values and returns the original dict.'''
+        for key in kvdict:
+            self.update(key, kvdict[key])
+        return kvdict
+
+    def remove(self, key):
+        '''Deletes the specified key:value pair and returns the key.'''
+        del self.__db[key]
+        return key
+
+    def bulk_remove(self, keys):
+        '''Deletes the specified key:value pairs and returns the iterable with the removed keys.'''
+        for key in keys:
+            self.remove(key)
+
     def __update_metadata(self, property, value):
-        """Updates the metadata key `key` with the value `value` and returns the changed key:value pair."""
+        '''Updates the metadata key `key` with the value `value` and returns the changed key:value pair.'''
         self.metadata.update({property: value})
         return {property: value}
+
+    def type(self, key):
+        '''Returns the variable type of the item.'''
+        NoneType = type(None) # This is necessary as NoneType isn't directly accessible.
+        match type(self.__db[key])():
+            case str():
+                return 'str'
+            case int():
+                return 'int'
+            case float():
+                return 'float'
+            case bytes():
+                return 'raw'
+            case NoneType():
+                return 'null'
+            case _:
+                return ''
+
+    def conv_type(self, key, targ_type):
+        '''Converts the item to type targ_type'''
+        ...
+
+    def todict(self):
+        '''Returns a dict with all keys and values from the L2DB object.'''
+        return {key:self[key] for key in self}
 
     def __repr__(self):
         """Returns a reusable string representation of the L2DB object."""
@@ -412,11 +436,14 @@ expected one of {self.supported_index_types}!")
         return len(self.__db)
 
     def __getitem__(self, item):
-        """Gets the __database dict's value corresponding to the key `key`."""
-        return self.__db[item]
+        """Gets the database dict's value corresponding to the key `key`."""
+        try:
+            return self.__db[item].copy()
+        except:
+            return self.__db[item]
 
     def __setitem__(self, key, value):
-        """Sets the __database dict's value corresponding to the key `key` to the value `value`."""
+        """Sets the database dict's value corresponding to the key `key` to the value `value`."""
         self.__db[key] = value
         return self.__db[key]
 
