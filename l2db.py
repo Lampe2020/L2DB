@@ -544,7 +544,7 @@ and returns the result."""
         return L2DB(source=self.syncout_db())
 
     def __deepcopy__(self, memodict={}):
-        """Returns a fresh copy of the current state of the L2DB object. Ignores the argument memodict. May get removed soon."""
+        """Returns a fresh copy of the current state of the L2DB object. Ignores the argument memodict."""
         return self.copy()
 
 
