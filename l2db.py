@@ -4,8 +4,8 @@
 """
 The L2DB database format, version 3. (c) Lampe2020 <kontakt@lampe2020.de>
 L2DB supports the following data types:
-    * keys: string
-    * Values: integer (32-bit), long (64-bit), float (32-bit), double (64-bit), raw (binary data)
+    * keys: string (UTF-8-encoded text)
+    * Values: integer (32-bit), long (64-bit), float (32-bit), double (64-bit), string (UTF-8-encoded text), raw (binary data)
 """
 
 import collections.abc as collections
@@ -89,10 +89,10 @@ but can be set to False (complain only about critical errors) using this method.
         """
 
         def str_from_bstr(bstr):
-            return ''.join([chr(l) for l in bstr])
+            return bstr.decode('utf-8') if isinstance(bstr, bytes) else bytes(bstr).decode('utf-8')
 
         def bstr_from_str(strng):
-            return bytes([ord(l) for l in strng])
+            return strng.encode('utf-8')
 
         def ins_into_bstr(bstr, idx, val):
             bstr_list = list(bstr)
@@ -210,6 +210,8 @@ expected one of {self.supported_index_types}!")
             self.__update_metadata('DB_INDEX_TYPE', metadata[13])  # Should return the single byte's value as int
         self.__update_metadata('RAW_VALUES', (not not metadata[14]))
 
+        helpers = self.__helpers()
+
         # Valtable
         valtable = database[64:64 + self.metadata['VALTABLE_LEN']]
 
@@ -223,20 +225,20 @@ expected one of {self.supported_index_types}!")
             if len(buffer) == 8:
                 match self.metadata['DB_INDEX_TYPE']:
                     case 1:
-                        int_from_bstr = self.__helpers(which='int_from_bstr')
+                        int_from_bstr = helpers['int_from_bstr']
                         cur_idx = (int_from_bstr(bytes(buffer[:4]), unsigned=True), int_from_bstr(bytes(buffer[4:]),
                                                                                                          unsigned=True))
                     case 2:
                         ...  # whole current buffer and next index is index tuple
                         # (buffer, None), then in next iteration change index[1] to the next starting index.
-                        cur_idx = (self.__helpers(which='long_from_bstr')(bytes(buffer), unsigned=True), None)
+                        cur_idx = (helpers['long_from_bstr'](bytes(buffer), unsigned=True), None)
                     case _:
                         if self.strict:
                             raise L2DBError(f"DB_INDEX_TYPE of {self.metadata['DB_INDEX_TYPE']} is not supported, \
 expected one of {self.supported_index_types}!")
 
             elif (buffer[-1] == 0) and (len(buffer) > 8):  # Avoid taking an index number with null-bytes in it as the end of the key's name!
-                key = ''.join([chr(l) for l in buffer[8:-1]])
+                key = helpers['str_from_bstr'](buffer[8:-1])
                 self.valtable[key] = cur_idx
                 if self.metadata['DB_INDEX_TYPE'] == 2:
                     try:
@@ -284,7 +286,7 @@ expected one of {self.supported_index_types}!")
                         case b'double':
                             self.__db[key] = helpers['bstr_to_double'](self.__db[key].split(b'\x00', 1)[1])
                         case b'str':
-                            self.__db[key] = ''.join([chr(b) for b in self.__db[key].split(b'\x00', 1)[1]])
+                            self.__db[key] = helpers['str_from_bstr'](self.__db[key].split(b'\x00', 1)[1])
                         case b'bool':
                             self.__db[key] = not not self.__db[key].split(b'\x00', 1)[1][
                                 0]  # Invert 2 times to get a boolean from the byte's integer value
@@ -292,7 +294,7 @@ expected one of {self.supported_index_types}!")
                             self.__db[key] = self.__db[key].split(b'\x00', 1)[
                                 1]  # Just cut away the leading null-byte to not destroy the actual value
                         case req_type if req_type in self.__registered_types:
-                            str_req_type = self.__helpers(which='bstr_to_str')(req_type)
+                            str_req_type = helpers['str_from_bstr'](req_type)
                             for reg_type in self.__registered_types:
                                 if str_req_type==self.__registered_types[reg_type]:
                                     self.__db[key] = self.__registered_types[reg_type][1](self.__db[key].split(b'\x00', 1)[1])
@@ -341,7 +343,7 @@ expected one of {self.supported_index_types}!")
                     if not self.metadata['RAW_VALUES']: # ... try it with one of the custom added types ...
                         for reg_type in self.__registered_types:
                             if type(_).__name__==self.__registered_types[reg_type]:
-                                return self.__helpers(which='bstr_from_str')(reg_type)+b'\x00'\
+                                return helpers['bstr_from_str'](reg_type)+b'\x00'\
                                     +self.__registered_types[reg_type][0](obj)
                     return helpers['bstr_from_str'](repr(obj)) if self.metadata['RAW_VALUES'] \
                         else b'str\x00' + helpers['bstr_from_str'](repr(obj))  # ...or just represent it as a string
@@ -366,7 +368,7 @@ expected one of {self.supported_index_types}!")
         # Metadata
         metadata = list(self.magic) + [0 for x in range(64 - len(self.magic))]
         metadata[8], metadata[9:13], metadata[13], metadata[14] = self.metadata['VER'], \
-            self.__helpers(which='bstr_from_int')(self.metadata['VALTABLE_LEN'], unsigned=True), \
+            helpers['bstr_from_int'](self.metadata['VALTABLE_LEN'], unsigned=True), \
             self.metadata['DB_INDEX_TYPE'], self.metadata['RAW_VALUES']
         metadata = bytes(metadata)
 
