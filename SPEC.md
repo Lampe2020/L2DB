@@ -1,6 +1,7 @@
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
 - Version 0.1   
+- Copyright (c) by Lampe2020 <kontakt@lampe2020.de>   
 - "spec", "the spec" or "this spec" in the following document refer to this specification unless otherwise specified.   
 - *Please note that this specification is written with Python3 in mind, if e.g. built-in functions or error types are 
 mentioned you may replace them with your programming language's equivalent.*   
