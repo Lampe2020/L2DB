@@ -8,7 +8,7 @@ L2DB supports the following data types:
     * Values: integer (32-bit), long (64-bit), float (32-bit), double (64-bit), string (UTF-8-encoded text), raw (binary data)
 
 ####################################################################################
-# NOTE that this code doesn't fully comply with the standard defined in FORMAT.md! #
+# NOTE that this code doesn't fully comply with the standard defined in SPEC.md! #
 ####################################################################################
 """
 
