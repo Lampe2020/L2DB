@@ -6,10 +6,20 @@ The L2DB database format, version 3. (c) Lampe2020 <kontakt@lampe2020.de>
 L2DB supports the following data types:
     * keys: string (UTF-8-encoded text)
     * Values: integer (32-bit), long (64-bit), float (32-bit), double (64-bit), string (UTF-8-encoded text), raw (binary data)
+
+####################################################################################
+# NOTE that this code doesn't fully comply with the standard defined in FORMAT.md! #
+####################################################################################
 """
 
 import collections.abc as collections
 import struct
+
+def overwrite_in_file(path, offset, data):
+    with open(path, 'r+b') as f:
+        f.seek(offset)    # Move the file pointer to the desired position
+        f.write(data)     # Write the new data, overwriting the existing content at that position
+    return data
 
 class L2DBError(BaseException):
     """General error in the l2db module."""
