@@ -28,6 +28,7 @@ If the data is stored in a file it should have either the `.dat` or the `.l2db` 
 ## Structure
 All integers in L2DB are little-endian (the least significant bit comes last, 
 e.g. 2048 is split up into `0x08 0x00` and not `0x00 0x08`).    
+All strings in L2DB are UTF-8 encoded.   
 The file is made of three sections, which are the [header](#header) (with a length of 64 bytes), the 
 [index](#index) (with variable length) and the [data](#data) (with variable length). 
 
@@ -51,9 +52,10 @@ although this doesn't need to be enforced.
 | `X64_INDEXES` |  Byte 14<br>Bit 7   | If the index numbers are one `uint64` or two `uint32`s                                                                                                                                                                                                                                                             |
 
 ### Index
-The index is a long string of entries which give a specific part of the data block a name. The length of this string is specified by the.   
-8 bytes for the index number(s) followed by a variable amount of non-`null` bytes for the name which is terminated by 
-one `null`-byte.   
+The index is a long string of entries which give a specific part of the data block a name. The length of this string is 
+specified by the 8 bytes for the index number(s) followed by three bytes for the value type and a variable amount of 
+non-`null` bytes for the name which is terminated by one `null`-byte. 
+If the type is unknown it will be interpreted as raw.   
 The order of these entries does not need to be maintained but can be.   
 If the flag `X64_INDEXES` is not set the index numbers will be two `uint32`s which refer to the starting and end offset 
 of the value's data.   
@@ -63,7 +65,7 @@ Be aware that in this case the values can still switch order but then the offset
 *Note: the indexed offsets are relative to the first data byte as byte 0, **not** the first byte of the file!*   
 
 ### Data
-*coming soon*
+The data is a pure concatenation of all data in the whole database. 
 
 ## Value types
 *coming soon*
@@ -81,10 +83,10 @@ The database can be opened in any combination of the following modes:
 *The following methods are in no particular order and should all be defined if they aren't marked as optional.*
 
 ### `flush()`
-| Argument name | Default value | Optional? |              Possible values               |
-|:-------------:|:-------------:|:---------:|:------------------------------------------:|
-|   filename    |    `None`     |    Yes    | any string or binary writeable file handle |
-|     move      |    `False`    |    Yes    |                any boolean                 |
+| Argument name | Default value | Optional? |                  Possible values                   |
+|:-------------:|:-------------:|:---------:|:--------------------------------------------------:|
+|   filename    |    `None`     |    Yes    | any string or binary file handle with write access |
+|     move      |    `False`    |    Yes    |                    any boolean                     |
 
 This method flushes the buffered changes to the given file 
 or (if none given) to the file the database has been read from.   
@@ -109,4 +111,4 @@ After the check the `DIRTY` flag is reset and (if the runtime-flag `verbose` is 
 <!-- Footnotes: -->
 
 [^1] The "version" in this case refers to a float with the whole-number part being the major version and the decimal 
-part being the minor version.
+part being the minor version.   
