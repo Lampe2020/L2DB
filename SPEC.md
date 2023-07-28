@@ -1,6 +1,6 @@
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
-- Version 1   
+- Version 0.1   
 - "spec", "the spec" or "this spec" in the following document refer to this specification unless otherwise specified.   
 - *Please note that this specification is written with Python3 in mind, if e.g. built-in functions or error types are 
 mentioned you may replace them with your programming language's equivalent.*   
@@ -51,14 +51,14 @@ The data section is a pure concatenation of all data in the whole database.
 
 ## Value types
 
-|        Type name        | Identifier | Description                                                                                                                                                                                  |
-|:-----------------------:|:----------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|  Signed integer number  |   `int`    | Any positive or negative 64-bit whole number. (aka.`long`[^2])                                                                                                                               |
-| Unsigned integer number |   `uin`    | Any positive 64-bit whole number. (aka.`unsigned long`[^2])                                                                                                                                  |
-|      Float number       |   `flt`    | Any positive or negative 64-bit number. (aka.`double`[^2])                                                                                                                                   |
-|         String          |   `str`    | Any UTF-8 encoded string.                                                                                                                                                                    |
-|           Raw           |   `raw`    | Any sequence of bytes.                                                                                                                                                                       |
-|          Empty          |   `nul`    | No value specified, gets a single `null`-byte (`\0`) in the [data](#data) section. *Note: in strict implementations the `DIRTY` bit should be set if this byte is anything other than null!* |
+|       Type name       | Identifier | Description                                                                                                                                                                                  |
+|:---------------------:|:----------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|     Whole number      |   `int`    | Any positive or negative 64-bit whole number. (aka.`long`[^2])                                                                                                                               |
+| Unsigned whole number |   `uin`    | Any positive 64-bit whole number. (aka.`unsigned long`[^2])                                                                                                                                  |
+|        Number         |   `flt`    | Any positive or negative 64-bit number. (aka.`double`[^2])                                                                                                                                   |
+|        String         |   `str`    | Any UTF-8 encoded string.                                                                                                                                                                    |
+|          Raw          |   `raw`    | Any sequence of bytes.                                                                                                                                                                       |
+|         Empty         |   `nul`    | No value specified, gets a single `null`-byte (`\0`) in the [data](#data) section. *Note: in strict implementations the `DIRTY` bit should be set if this byte is anything other than null!* |
 
 
 ## Modes
@@ -104,6 +104,6 @@ After the check the `DIRTY` flag is reset and (if the runtime-flag `verbose` is 
 <!-- Footnotes: -->
 
 [^1] The "version" in this case refers to a float with the whole-number part being the major version and the decimal 
-part being the minor version.   
+part being the minor version. Any subversions of those may not introduce breaking changes so they can be omitted.   
 [^2] I chose the largest type available to keep the spec simple, implementations may choose to "compress" them if their 
 value fits into smaller types or simply a smaller type is needed.
