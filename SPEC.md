@@ -1,21 +1,3 @@
-<!-- Old description:   
-The first 64 bytes of the file are reserved for metadata, 8 of which define the value_table's length after the metadata.
-The first 8 bytes are _always_ b'\\x88L2DB\\x00\\x00\\x00' or b'\\x88L2020DB'.
-Length of value_table defined in 32-bit number (4 bytes) (There should never be the need for a 4GB+ big index listing!).
-All indexes are beginning to be counted after that.
-For example, with a value_table length of 12, the byte at real index 100 is called
-index ((real_index:100)-(metadata_length:const:64)-(value_table_length=12)) = 14.
-In the value_table, two 4-byte (32-bit) numbers for each value represent the start and end index of that value
-(DB_INDEX_TYPE:1). The names of all values are immediately after their index and null-terminated,
-up to 32 usable bytes per name. If the index is immediately followed by a null-byte the index is used as the name.
-Alternatively, 8 bytes represent the index and the end is then the byte before the next index or the
-file end (DB_INDEX_TYPE:2). A DB_INDEX_TYPE of 0 is invalid and as of now also anything above 2; they will default to 2.
-Type declarations occur in the value itself, with ASCII-encoded type name, separated by null from the value.
-To get a bstring without type declaration, just begin the value with a null character,
-which will be stripped away and the resulting 0-character type declaration will cause the value
-to be stored as the raw binary value.
--->
-
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
 - Version 1   
@@ -33,8 +15,8 @@ The file is made of three sections, which are the [header](#header) (with a leng
 [index](#index) (with variable length) and the [data](#data) (with variable length). 
 
 ### Header
-The header (with the file magic included) is always 64 bytes long, with the non-used bytes being filled with zeroes, 
-although this doesn't need to be enforced.   
+The header (with the file magic included) is always 64 bytes long, with the non-used bytes being filled with 
+`null`-bytes (`\0`), although this doesn't need to be enforced.   
 
 | Offset *(ranges include both start and end)* |   Meaning    | Content                                                                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 |:--------------------------------------------:|:------------:|:---------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
