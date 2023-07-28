@@ -32,8 +32,8 @@ The header (with the file magic included) is always 64 bytes long, with the non-
 |   Flag name   |    Flag position    | Flag meaning                                                                                                                                                                                                                                                                                                       |
 |:-------------:|:-------------------:|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 |   *unused*    | Byte 14<br>Bits 0-4 | none *Note: strict implementations should automatically reset these if they happen to be set.*                                                                                                                                                                                                                     |
-|   `LOCKED`    |  Byte 14<br>Bit 5   | The database can only be opened in ['rf' mode](#modes) and each reading action will cause a warning that the database is locked.                                                                                                                                                                                   |
-|    `DIRTY`    |  Byte 14<br>Bit 6   | If any error occurs during reading/writing on the DB this bit gets set.<br>If it is set, each subsequent reading action will cause a warning that the database is dirty and each writing action on the database will fail and raise a `L2DBIsDirty` exception  until the [`cleanup()`](#cleanup) method is called. |
+|   `LOCKED`    |  Byte 14<br>Bit 5   | The database can only be opened in ['rf' mode](#modes) and each reading action will emit a warning that the database is locked.                                                                                                                                                                                   |
+|    `DIRTY`    |  Byte 14<br>Bit 6   | If any error occurs during reading/writing on the DB this bit gets set.<br>If it is set, each subsequent reading action will emit a warning that the database is dirty and each writing action on the database will fail and raise a `L2DBIsDirty` exception  until the [`cleanup()`](#cleanup) method is called. |
 | `X64_INDEXES` |  Byte 14<br>Bit 7   | If the index numbers are one `uint64` or two `uint32`s                                                                                                                                                                                                                                                             |
 
 ### Index
@@ -53,7 +53,7 @@ Be aware that in this case the values can still switch order but then the offset
 The data section is a pure concatenation of all values in the whole database. 
 
 ## Value types
-*If implicit type conversions are done, cause a warning `Could not assign '{{new_type}}' to a key of type 
+*If implicit type conversions are done, emit a warning `Could not assign '{{new_type}}' to a key of type 
 '{{old_type}}'. Implicitly converted the key to '{{new_type}}'`, with `new_type` being the new value's type Identifier 
 (see table below) and `old_type` being the previous type Identifier (see table below) of the key.   
 If a type conversion fails or isn't possible, raise a `L2DBTypeError` exception with the message `Could not assign 
@@ -66,6 +66,7 @@ table below) and `key_type` being the key's type Identifier (see table below), o
 |     Whole number      |   `int`    | Any positive or negative 64-bit whole number. (aka.`long`[^2]) If a positive number too large for a normal `long` is tried to assign, implicitly convert the key to a `uin` if that allows for storing the value, otherwise fail.                                                                                                                 |
 | Positive whole number |   `uin`    | Any positive 64-bit whole number. (aka.`unsigned long`[^2]) If a negative number is tried to assign, implicitly convert the key to a `int` if that allows for storing the value, otherwise fail.                                                                                                                                                  |
 |        Number         |   `flt`    | Any positive or negative 64-bit number. (aka.`double`[^2])                                                                                                                                                                                                                                                                                        |
+|        Boolean        |   `bol`    | True or False. Is stored in a single bit which is set to either 0x01 (True) or 0x00 (False). If a `int`, `uin` or `flt` 0 or 1 is tried to assign, implicitly convert the value to True for 1 and False for 0. *Note: in strict implementations the `DIRTY` bit should be set if this byte is anything other than 0x00 or 0x01!*                  |
 |        String         |   `str`    | Any UTF-8 encoded string.                                                                                                                                                                                                                                                                                                                         |
 |          Raw          |   `raw`    | Any sequence of bytes.                                                                                                                                                                                                                                                                                                                            |
 |         Empty         |   `nul`    | No value specified, gets a single `null`-byte (`\0`) in the [data](#data) section. *Note: in strict implementations the `DIRTY` bit should be set if this byte is anything other than null!*<br> If a non-`null` value is assigned, implicitly convert the key to the appropriate data type if that allows for storing the value, otherwise fail. |
@@ -82,20 +83,35 @@ The database can be opened in any combination of the following modes:
 | `f`  |   file    | The database works directly on the database file without buffering into memory. *Note: in this mode all actions are immediately applied to the file!*                                                                                                                                      |
 
 ## Methods
-*The following methods are in no particular order and should all be defined if they aren't marked as optional.*
+*The following methods are in no particular order and should all be defined if they aren't marked as optional in their 
+title.   
+"Optional" arguments have to be implemented but don't need to be specified if the programming language supports that.*
 
 <!-- TODO: Add the remaining method descriptions! -->
 
+### `open()`
+
+|  Argument name  | Default value | Optional? | Possible values                                                                                                                                                                                                                                                                                                      |
+|:---------------:|:-------------:|:---------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|    `source`     |               |    No     | - File path, as String<br>- `r` or `rw` binary file handle<br>- `bytes` to act on as if they were the file content<br>- `dict` with zero or more valid key-value pairs, invalid pairs are tried to convert or are otherwise discarded with a warning stating `Could not load key '{{keyname}}', discarding it`. |
+|     `mode`      |    `'rw'`     |    Yes    | String with any combination of letters described in the [modes](#modes) table.                                                                                                                                                                                                                                       |
+| `runtime_flags` |  empty tuple  |    Yes    | A list of strings that specify each one runtime flag name to be enabled. All runtime flags are by default disabled.                                                                                                                                                                                                  |
+
+This method populates the `L2DB` with the new content and (if there were more than zero keys in the `L2DB` before) 
+emits a warning stating `Old content of L2DB has been discarded in favor of new content`. This method is also 
+called by the object constructor to populate the database.   
+
+
 ### `flush()`
-| Argument name | Default value | Optional? |                  Possible values                   |
-|:-------------:|:-------------:|:---------:|:--------------------------------------------------:|
-|   filename    |    `None`     |    Yes    | any string or binary file handle with write access |
-|     move      |    `False`    |    Yes    |                    any boolean                     |
+| Argument name  | Default value | Optional? |                  Possible values                   |
+|:--------------:|:-------------:|:---------:|:--------------------------------------------------:|
+|   `filename`   |    `None`     |    Yes    | any string or binary file handle with write access |
+|     `move`     |    `False`    |    Yes    |                    any boolean                     |
 
 This method flushes the buffered changes to the given file 
 or (if none given) to the file the database has been read from.   
-If the database is in [`f` mode](#modes) this will just clone the database file to the new location, 
-see [`f` mode's description](#modes).   
+If the database is in [file mode](#modes) this will just clone the database file to the new location, 
+see the [file mode's description](#modes).   
 *Note: If no file is given and none has been used to initialize the database this method shall raise a 
 `FileNotFoundError` with the message `No file specified!`!*
 
@@ -103,13 +119,15 @@ see [`f` mode's description](#modes).
 | Argument name | Default value | Optional? | Possible values |
 |:-------------:|:-------------:|:---------:|:---------------:|
 |  `only_flag`  |    `False`    |    Yes    |   any boolean   |
+| `dont_rescue` |    `False`    |    Yes    |   any boolean   |
 
 If `only_flag` is True only the `DIRTY` flag will be reset but no errors will be fixed. **Warning: this may cause 
 errors later on if there is invalid content in the file!**   
 Otherwise the method searches for and fixes any errors in the database, such as checking wether all values are 
 readable as their assigned type and if not, if they are readable as any other type, with the fallback being 'raw'. The 
-[header](#header) is completely regenerated in this case.   
-After the check the `DIRTY` flag is reset and (if the runtime-flag `verbose` is set) the errors and fixes are output.   
+[header](#header) is completely regenerated in this case. If `dont_rescue` is set to `True` all invalid values are 
+discarded instead of being tried to fix.   
+After the check the `DIRTY` flag is reset and (if the runtime-flag `verbose` is set) the errors and fixes are logged.   
 
 
 <!-- Footnotes: -->
