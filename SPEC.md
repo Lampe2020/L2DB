@@ -23,9 +23,11 @@ to be stored as the raw binary value.
 - *Please note that this specification is written with Python3 in mind, if e.g. built-in functions or error types are 
 mentioned you may replace them with your programming language's equivalent.*   
 
+If the data is stored in a file it should have either the `.dat` or the `.l2db` file extension. 
 
 ## Structure
-All integers in L2DB are little-endian (the least significant bit comes last, e.g. 2048 is `0b0000100000000000`).    
+All integers in L2DB are little-endian (the least significant bit comes last, 
+e.g. 2048 is split up into `0x08 0x00` and not `0x00 0x08`).    
 The file is made of three sections, which are the [header](#header) (with a length of 64 bytes), the 
 [index](#index) (with variable length) and the [data](#data) (with variable length). 
 
@@ -41,12 +43,12 @@ although this doesn't need to be enforced.
 |                      16                      |    Flags     | *See flag table below.*                                                    | If all flags are set the byte should have the value 0x83 (`0b10000011`).                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 |                    17-63                     |     none     | *Not assigned yet.*                                                        | Should be filled with`null`-bytes (`\0`). Strict implementations should set the `DIRTY` flag if this is not the case.                                                                                                                                                                                                                                                                                                                                                                                       |
 
-|   Flag name   |    Flag position    | Flag meaning                                                                                                                                                                                                                                                                                                       |   
+|   Flag name   |    Flag position    | Flag meaning                                                                                                                                                                                                                                                                                                       |
 |:-------------:|:-------------------:|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|   `LOCKED`    |  Byte 14<br>Bit 0   | The database can only be opened in ['rf' mode](#modes) and each reading action will cause a warning that the database is locked.                                                                                                                                                                                   |   
-|   *unused*    | Byte 14<br>Bits 1-5 | none                                                                                                                                                                                                                                                                                                               |
-|    `DIRTY`    |  Byte 14<br>Bit 6   | If any error occurs during reading/writing on the DB this bit gets set.<br>If it is set, each subsequent reading action will cause a warning that the database is dirty and each writing action on the database will fail and raise a `L2DBIsDirty` exception  until the [`cleanup()`](#cleanup) method is called. |   
-| `X64_INDEXES` |  Byte 14<br>Bit 7   | If the index numbers are one `uint64` or two `uint32`s                                                                                                                                                                                                                                                             |   
+|   *unused*    | Byte 14<br>Bits 0-4 | none                                                                                                                                                                                                                                                                                                               |
+|   `LOCKED`    |  Byte 14<br>Bit 5   | The database can only be opened in ['rf' mode](#modes) and each reading action will cause a warning that the database is locked.                                                                                                                                                                                   |
+|    `DIRTY`    |  Byte 14<br>Bit 6   | If any error occurs during reading/writing on the DB this bit gets set.<br>If it is set, each subsequent reading action will cause a warning that the database is dirty and each writing action on the database will fail and raise a `L2DBIsDirty` exception  until the [`cleanup()`](#cleanup) method is called. |
+| `X64_INDEXES` |  Byte 14<br>Bit 7   | If the index numbers are one `uint64` or two `uint32`s                                                                                                                                                                                                                                                             |
 
 ### Index
 The index is a long string of entries which give a specific part of the data block a name. The length of this string is specified by the.   
@@ -83,6 +85,7 @@ The database can be opened in any combination of the following modes:
 |:-------------:|:-------------:|:---------:|:------------------------------------------:|
 |   filename    |    `None`     |    Yes    | any string or binary writeable file handle |
 |     move      |    `False`    |    Yes    |                any boolean                 |
+
 This method flushes the buffered changes to the given file 
 or (if none given) to the file the database has been read from.   
 If the database is in [`f` mode](#modes) this will just clone the database file to the new location, 
@@ -94,6 +97,7 @@ see [`f` mode's description](#modes).
 | Argument name | Default value | Optional? | Possible values |
 |:-------------:|:-------------:|:---------:|:---------------:|
 |  `only_flag`  |    `False`    |    Yes    |   any boolean   |
+
 If `only_flag` is True only the `DIRTY` flag will be reset but no errors will be fixed. **Warning: this may cause 
 errors later on if there is invalid content in the file!**   
 Otherwise the method searches for and fixes any errors in the database, such as checking wether all values are 
