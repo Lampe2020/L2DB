@@ -2,6 +2,8 @@
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
 - Version 0.1   
 - Copyright (c) by Lampe2020 <kontakt@lampe2020.de>   
+- If strings in this spec contain a variable name enclosed in double curly braces this means that that part of the 
+string shouldn't be taken literally but instead replaced with the appropriate content, if not specified otherwise.
 - "spec", "the spec" or "this spec" in the following document refer to this specification unless otherwise specified.   
 - If the data is stored in a file it should (but doesn't need to) have either the `.dat` or the `.l2db` file extension.
 - The class name in the implementation should be `L2DB`, if several versions are supported `L2DBVer{{version}}`.   
@@ -51,18 +53,23 @@ Be aware that in this case the values can still switch order but then the offset
 The data section is a pure concatenation of all values in the whole database. 
 
 ## Value types
-*If implicit type conversions are done, cause a warning `Could not assign {{new_type}} to a key of type {{old_type}}. 
-Implicitly converted the key to {{new_type}}`, with `new_type` being the new value's type Identifier (see table below) 
-and `old_type` being the previous type Identifier (see table below) of the key.*
+*If implicit type conversions are done, cause a warning `Could not assign '{{new_type}}' to a key of type 
+'{{old_type}}'. Implicitly converted the key to '{{new_type}}'`, with `new_type` being the new value's type Identifier 
+(see table below) and `old_type` being the previous type Identifier (see table below) of the key.   
+If a type conversion fails or isn't possible, raise a `L2DBTypeError` exception with the message `Could not assign 
+value of type '{{val_type}}' to key of type '{{key_type}}'`, with `val_type` being the value's type Identifier (see 
+table below) and `key_type` being the key's type Identifier (see table below), optionally extend the message with 
+` Details: {{details}}`, with `details` being any string that tries to explain the error or help to avoid it.*
 
-|       Type name       | Identifier | Description                                                                                                                                                                                                                                                                                  |
-|:---------------------:|:----------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|     Whole number      |   `int`    | Any positive or negative 64-bit whole number. (aka.`long`[^2]) If a positive number too large for a normal `long` is tried to assign, implicitly convert the key to a `uin`.                                                                                                                 |
-| Positive whole number |   `uin`    | Any positive 64-bit whole number. (aka.`unsigned long`[^2]) If a negative number is tried to assign, implicitly convert the key to a `int`.                                                                                                                                                  |
-|        Number         |   `flt`    | Any positive or negative 64-bit number. (aka.`double`[^2])                                                                                                                                                                                                                                   |
-|        String         |   `str`    | Any UTF-8 encoded string.                                                                                                                                                                                                                                                                    |
-|          Raw          |   `raw`    | Any sequence of bytes.                                                                                                                                                                                                                                                                       |
-|         Empty         |   `nul`    | No value specified, gets a single `null`-byte (`\0`) in the [data](#data) section. *Note: in strict implementations the `DIRTY` bit should be set if this byte is anything other than null!*<br> If a non-`null` value is assigned, implicitly convert the key to the appropriate data type. |
+|       Type name       | Identifier | Description                                                                                                                                                                                                                                                                                                                                       |
+|:---------------------:|:----------:|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|     Whole number      |   `int`    | Any positive or negative 64-bit whole number. (aka.`long`[^2]) If a positive number too large for a normal `long` is tried to assign, implicitly convert the key to a `uin` if that allows for storing the value, otherwise fail.                                                                                                                 |
+| Positive whole number |   `uin`    | Any positive 64-bit whole number. (aka.`unsigned long`[^2]) If a negative number is tried to assign, implicitly convert the key to a `int` if that allows for storing the value, otherwise fail.                                                                                                                                                  |
+|        Number         |   `flt`    | Any positive or negative 64-bit number. (aka.`double`[^2])                                                                                                                                                                                                                                                                                        |
+|        String         |   `str`    | Any UTF-8 encoded string.                                                                                                                                                                                                                                                                                                                         |
+|          Raw          |   `raw`    | Any sequence of bytes.                                                                                                                                                                                                                                                                                                                            |
+|         Empty         |   `nul`    | No value specified, gets a single `null`-byte (`\0`) in the [data](#data) section. *Note: in strict implementations the `DIRTY` bit should be set if this byte is anything other than null!*<br> If a non-`null` value is assigned, implicitly convert the key to the appropriate data type if that allows for storing the value, otherwise fail. |
+|        Invalid        |   `inv`    | Non-storable data type, just used for error messages.                                                                                                                                                                                                                                                                                             |
 
 
 ## Modes
