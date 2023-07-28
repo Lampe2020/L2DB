@@ -17,10 +17,12 @@ to be stored as the raw binary value.
 -->
 
 # L2DB file format specification
-- version 1   
 *If you want to make an alternative implementation of this format, use this as a reference.*   
-Please note that this specification is written with Python3 in mind, if e.g. built-in functions or error types are 
-mentioned you can replace them with your programming language's equivalent.  
+- Version 1   
+- "Spec" or "spec" in the following document refers to this specification.   
+- *Please note that this specification is written with Python3 in mind, if e.g. built-in functions or error types are 
+mentioned you may replace them with your programming language's equivalent.*   
+
 
 ## Structure
 All integers in L2DB are little-endian (the least significant bit comes last, e.g. 2048 is `0b0000100000000000`).    
@@ -28,27 +30,16 @@ The file is made of three sections, which are the [header](#header) (with a leng
 [index](#index) (with variable length) and the [data](#data) (with variable length). 
 
 ### Header
-The file always begins with the following eight bytes: 
-0x88, 0x4c, 0x32, 0x44, 0x42, 0x00, 0x00, 0x00 (`\x88L2DB\0\0\0`), which make up the "file magic" (easy way to 
-recognize an L2DB file just by its first few bytes).   
 The header (with the file magic included) is always 64 bytes long, with the non-used bytes being filled with zeroes, 
 although this doesn't need to be enforced.   
-The bytes at offset 8-9 contain the implementation version as a `uint16`. 
-If this doesn't match the program's version the program should convert the in-memory copy of the file 
-to the matching version if possible, otherwise raise a `L2DBVersionMismatch` with the message 
-`The database is in version {{db_ver}} but the reader is in version {{imp_ver}}. Conversion failed.`, 
-with `db_ver` being the database's version and `imp_ver` being the implementation's version.
-At offset 10-13 lies the [index](#index) length as an unsigned 32-bit integer.   
-After that comes the first eight flags at offset 14, If all flags are set the byte has the value 0x83 (0b10000011).   
-LOCKED, *unused*, *unused*, *unused*, *unused*, *unused*, DIRTY, X64_INDEXES   
 
-| Offset |   Meaning    | Content                                                                    | Description                                          |
-|:------:|:------------:|:---------------------------------------------------------------------------|:-----------------------------------------------------|
-|  0-7   |  File magic  | bytes([0x88, 0x4c, 0x32, 0x44, 0x42, 0x00, 0x00, 0x00]) (`\x88L2DB\0\0\0`) | Allows for easy recognition of the file as a L2DB.   |
-|  8,9   | Spec version | one `uint16`                                                               | The version of the standard used to create the file. |
-| 10-13  | Index length | one `uint32`                                                               | The length of the [index](#index)                    |
-|   14   |    Flags     | *See flag table below.*                                                    |                                                      |
-| 15-63  |     none     | *Not assigned yet.*                                                        | Should be filled with`null`-bytes (`\0`).            |
+| Offset *(ranges include both start and end)* |   Meaning    | Content                                                                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+|:--------------------------------------------:|:------------:|:---------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|                     0-7                      |  File magic  | bytes([0x88, 0x4c, 0x32, 0x44, 0x42, 0x00, 0x00, 0x00]) (`\x88L2DB\0\0\0`) | Allows for easy recognition of the file as an L2DB file.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+|                     8-11                     | Spec version | The spec version as one `uint16`                                           | The version of the standard used to create the file. If this doesn't match the program's version the program should convert the in-memory copy of the file to the matching version if possible, otherwise raise a `L2DBVersionMismatch` with the message `The database follows the spec version {{db_ver}} but the implementation follows the spec version {{imp_ver}}. Conversion failed.`, with `db_ver` being the database's version and `imp_ver` being the implementation's version. |
+|                    12-15                     | Index length | one `uint32`                                                               | The length of the [index](#index)                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+|                      16                      |    Flags     | *See flag table below.*                                                    | If all flags are set the byte should have the value 0x83 (`0b10000011`)                                                                                                                                                                                                                                                                                                                                                                                                                   |
+|                    17-63                     |     none     | *Not assigned yet.*                                                        | Should be filled with`null`-bytes (`\0`). Strict implementations should set the `DIRTY` flag if this is not the case.                                                                                                                                                                                                                                                                                                                                                                     |
 
 |   Flag name   |    Flag position    | Flag meaning                                                                                                                                                                                                                                                                                                       |   
 |:-------------:|:-------------------:|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -61,11 +52,13 @@ LOCKED, *unused*, *unused*, *unused*, *unused*, *unused*, DIRTY, X64_INDEXES
 The index is a long string of entries which give a specific part of the data block a name. The length of this string is specified by the.   
 8 bytes for the index number(s) followed by a variable amount of non-`null` bytes for the name which is terminated by 
 one `null`-byte.   
+The order of these entries does not need to be maintained but can be.   
 If the flag `X64_INDEXES` is not set the index numbers will be two `uint32`s which refer to the starting and end offset 
 of the value's data.   
 If it is set then the index number is one `uint64` which refers to the offset where the value's data 
-starts, the end index is found by getting the next value's starting index. The last value ends at the file end.   
-*Note: the indexed offsets take the first data byte as byte 0, **not** the first byte of the file!*   
+starts, the end index is found by getting the next value's starting index. The last value ends at the file end. 
+Be aware that in this case the values can still switch order but then the offsets need to be recalculated!   
+*Note: the indexed offsets are relative to the first data byte as byte 0, **not** the first byte of the file!*   
 
 ### Data
 *coming soon*
@@ -76,11 +69,11 @@ starts, the end index is found by getting the next value's starting index. The l
 ## Modes
 The database can be opened in any combination of the following modes:
 
-| Mode |  Meaning  | Description                                                                                                                                                                                       |
-|:----:|:---------:|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `r`  | readable  | The database can be read.                                                                                                                                                                         |
-| `w`  | writeable | The database can be written to. *Note: this requires the `r` mode!<br>Note: If this is used without `f` mode the changes are only applied to the file on call to the [`flush()`](#flush) method!* |
-| `f`  |   file    | The database works directly on the database file without buffering into memory. *Note: in this mode all actions are immediately applied to the file!*                                             |
+| Mode |  Meaning  | Description                                                                                                                                                                                                                                                                                |
+|:----:|:---------:|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `r`  | readable  | The database can be read.                                                                                                                                                                                                                                                                  |
+| `w`  | writeable | The database can be written to. This implicitly half-enables the `r` mode, allowing for the program to orient itself but not for any read methods to work.<br>*Note: If this is used without `f` mode the changes are only applied to the file on call to the [`flush()`](#flush) method!* |
+| `f`  |   file    | The database works directly on the database file without buffering into memory. *Note: in this mode all actions are immediately applied to the file!*                                                                                                                                      |
 
 ## Methods
 *The following methods are in no particular order and should all be defined if they aren't marked as optional.*
@@ -94,8 +87,8 @@ This method flushes the buffered changes to the given file
 or (if none given) to the file the database has been read from.   
 If the database is in [`f` mode](#modes) this will just clone the database file to the new location, 
 see [`f` mode's description](#modes).   
-*Note: If no file is given and none has been used to initialize the database this method will raise a 
-`FileNotFoundError` (or its equivalent from the implementation's programming language)*
+*Note: If no file is given and none has been used to initialize the database this method shall raise a 
+`FileNotFoundError` with the message `No file specified!`!*
 
 ### `cleanup()`
 | Argument name | Default value | Optional? | Possible values |
@@ -104,5 +97,6 @@ see [`f` mode's description](#modes).
 If `only_flag` is True only the `DIRTY` flag will be reset but no errors will be fixed. **Warning: this may cause 
 errors later on if there are errors!**   
 Otherwise the method searches for and fixes any errors in the database, such as checking wether all values are 
-readable as their assigned type and if not, if they are readable as any other type, with the fallback being 'raw'.   
+readable as their assigned type and if not, if they are readable as any other type, with the fallback being 'raw'. The 
+[header](#header) is completely regenerated in this case.   
 After the check the `DIRTY` flag is reset and (if the runtime-flag `verbose` is set) the errors and fixes are output.   
