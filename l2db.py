@@ -16,10 +16,15 @@ import collections.abc as collections
 import struct
 
 def overwrite_in_file(path, offset, data):
+    """Overwrite only `len(data)` bytes in file `path` beginning at `offset`"""
     with open(path, 'r+b') as f:
         f.seek(offset)    # Move the file pointer to the desired position
         f.write(data)     # Write the new data, overwriting the existing content at that position
     return data
+
+def getbit(seq, pos):
+    """Get only the bit at offset `pos` from the right in number `seq`."""
+    return 1&(seq>>pos)
 
 class L2DBError(BaseException):
     """General error in the l2db module."""
