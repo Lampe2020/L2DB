@@ -110,7 +110,8 @@ called by the object constructor to populate the database.
 |    `type`     |               |    No     | Any three-letter string matching one of the type Identifiers (see [type table](#valuetypes)) |
 
 Converts the key along with its value to the target type, if that fails a `L2DBTypeError` exception should be raised with the message `Could not convert {{keyname}} to type '{{type}}'`, with `keyname` in single-quotes except if the name contains single-quotes, then double-quotes.   
-If a `flt` is converted to any whole number type it simply loses its decimals (not rounded but cut off) and if any whole number type is converted to `flt` it gets 0 as the only decimal place. Examples: `1.999 -> 1` and `1 -> 1.0`
+If a `flt` is converted to any whole number type it simply loses its decimals (not rounded but cut off) and if any whole number type is converted to `flt` it gets 0 as the only decimal place. Examples: `1.999 -> 1`, `-3.7 -> 3` and `1 -> 1.0`   
+If a negative number gets converted to `uin` it loses its negativity and if a `uin` that's too large for `int` gets converted to `int` it is set to 4294967295 (0xffffffff). Examples: `-3 -> 3`, `-2.9 -> 2` and `4294967296 -> 4294967295`.
 
 
 ### `flush()`
