@@ -16,10 +16,11 @@ which will be stripped away and the resulting 0-character type declaration will 
 to be stored as the raw binary value.
 -->
 
-# L2DB file format
+# L2DB file format specification
 - version 1   
 *If you want to make an alternative implementation of this format, use this as a reference.*   
-  
+Please note that this specification is written with Python3 in mind, if e.g. built-in functions or error types are 
+mentioned you can replace them with your programming language's equivalent.  
 
 ## Structure
 All integers in L2DB are little-endian (the least significant bit comes last, e.g. 2048 is `0b0000100000000000`).    
@@ -36,19 +37,25 @@ The bytes at offset 8-9 contain the implementation version as a uint16.
 If this doesn't match the program's version the program should convert the in-memory copy of the file 
 to the matching version if possible, otherwise refuse to load.
 At offset 10-13 lies the [index](#index) length as an unsigned 32-bit integer.   
-After that comes the first eight flags at offset 14, If all flags are set the byte has the value 0x07 (0b00000111).   
-*unused*, *unused*, *unused*, *unused*, *unused*, LOCKED, DIRTY, END_INDEXES   
+After that comes the first eight flags at offset 14, If all flags are set the byte has the value 0x83 (0b10000011).   
+LOCKED, *unused*, *unused*, *unused*, *unused*, *unused*, DIRTY, X64_INDEXES   
 
 |   Flag name   |    Flag position    | Flag meaning                                                                                                                                                                                                                                                                                                       |   
-|:-------------:|:-------------------:|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|   
-|  `<unused>`   | Byte 14<br>Bits 0-5 | Nothing.                                                                                                                                                                                                                                                                                                           |
-|   `LOCKED`    |  Byte 14<br>Bit 5   | The database can only be opened in ['rf' mode](#modes) and each reading action will cause a warning that the database is locked.                                                                                                                                                                                   |
+|:-------------:|:-------------------:|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|   `LOCKED`    |  Byte 14<br>Bit 0   | The database can only be opened in ['rf' mode](#modes) and each reading action will cause a warning that the database is locked.                                                                                                                                                                                   |   
+|   *unused*    | Byte 14<br>Bits 1-5 | none                                                                                                                                                                                                                                                                                                               |
 |    `DIRTY`    |  Byte 14<br>Bit 6   | If any error occurs during reading/writing on the DB this bit gets set.<br>If it is set, each subsequent reading action will cause a warning that the database is dirty and each writing action on the database will fail and raise a `L2DBIsDirty` exception  until the [`cleanup()`](#cleanup) method is called. |   
-| `END_INDEXES` |  Byte 14<br>Bit 7   | If the index numbers are one uint64 or two uint32                                                                                                                                                                                                                                                                  |   
+| `X64_INDEXES` |  Byte 14<br>Bit 7   | If the index numbers are one uint64 or two uint32                                                                                                                                                                                                                                                                  |   
 
 ### Index
 The index is a long string of entries which give a specific part of the data block a name.   
-If the flag `END_INDEXES`
+8 bytes for the index number(s) followed by a variable amount of non-`null` bytes for the name which is terminated by 
+one `null`-byte.   
+If the flag `X64_INDEXES` is not set the index numbers will be two `uint32`s which refer to the starting and end offset 
+of the value's data.   
+If it is set then the index number is one `uint64` which refers to the offset where the value's data 
+starts, the end index is found by getting the next value's starting index. The last value ends at the file end.   
+*Note: the indexed offsets take the first data byte as byte 0, **not** the first byte of the file!*   
 
 ### Data
 *coming soon*
@@ -59,19 +66,31 @@ If the flag `END_INDEXES`
 ## Modes
 The database can be opened in any combination of the following modes:
 
-| Mode |  Meaning  | Description                                                                                        |
-|:----:|:---------:|:---------------------------------------------------------------------------------------------------|
-| `r`  | readable  | The database can be read.                                                                          |
-| `w`  | writeable | The database can be written to. *Note: this requires the `r` mode if the database already exists!* |
-| `f`  |   file    | The database works directly on the database file without buffering into memory.                    |
+| Mode |  Meaning  | Description                                                                                                                                                                              |
+|:----:|:---------:|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `r`  | readable  | The database can be read.                                                                                                                                                                |
+| `w`  | writeable | The database can be written to. *Note: this requires the `r` mode! If this is used without `f` mode the changes are only applied to the file on call to the [`flush()`](#flush) method!* |
+| `f`  |   file    | The database works directly on the database file without buffering into memory. *Note: in this mode all actions are immediately applied to the file!*                                    |
 
 ## Methods
 *The following methods are in no particular order and should all be defined if they aren't marked as optional.*
 
+### `flush()`
+| argument |  default value  | Optional? |              possible values               |
+|:--------:|:---------------:|:---------:|:------------------------------------------:|
+| filename | `None` (`null`) |    Yes    | any string or binary writeable file handle |
+|   move   |     `False`     |    Yes    |                any boolean                 |
+This method flushes the buffered changes to the given file 
+or (if none given) to the file the database has been read from.   
+If the database is in [`f` mode](#modes) this will just clone the database file to the new location, 
+see [`f` mode's description](#modes).   
+*Note: If no file is given and none has been used to initialize the database this method will raise a 
+`FileNotFoundError` (or its equivalent from the implementation's programming language)*
+
 ### `cleanup()`
-|  argument   | default value | possible values |
-|:-----------:|:-------------:|:---------------:|
-| `only_flag` |    `False`    |  all booleans   |
+|  argument   | default value | Optional? | possible values |
+|:-----------:|:-------------:|:---------:|:---------------:|
+| `only_flag` |    `False`    |    Yes    |   any boolean   |
 If `only_flag` is True only the `DIRTY` flag will be reset but no errors will be fixed. **Warning: this may cause 
 errors later on if there are errors!**   
 Otherwise the method searches for and fixes any errors in the database, such as checking wether all values are 
