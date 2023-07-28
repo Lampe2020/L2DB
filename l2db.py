@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-The L2DB database format, version 3. (c) Lampe2020 <kontakt@lampe2020.de>
+The L2DB database format, version 1. (c) Lampe2020 <kontakt@lampe2020.de>
 L2DB supports the following data types:
     * keys: string (UTF-8-encoded text)
     * Values: integer (32-bit), long (64-bit), float (32-bit), double (64-bit), string (UTF-8-encoded text), raw (binary data)
@@ -10,6 +10,7 @@ L2DB supports the following data types:
 ####################################################################################
 # NOTE that this code doesn't fully comply with the standard defined in SPEC.md! #
 ####################################################################################
+→ This is the case because I changed some things when actually coming up with a spec instead of just randomly creating spaghetti code.
 """
 
 import collections.abc as collections
