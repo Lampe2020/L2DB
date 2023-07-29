@@ -118,6 +118,8 @@ raised should not be caught.
 If the key doesn't exist, it raises a `L2DBKeyError` exception with the message `{{key}} could not be found`, with 
 `key` in single quotes unless it contains single quotes, in that case with double quotes and any contained double 
 quotes escaped with a backslash.   
+If the key is found several times in the DB an implementation-specific one of all the values is picked (first, last or 
+random).   
 
 
 ### `write()`
@@ -162,6 +164,16 @@ whole number type is converted to `flt` it gets 0 as the only decimal place. Exa
 If a negative number gets converted to `uin` it loses its negativity and if a `uin` that's too large for `int` gets 
 converted to `int` it is set to 4294967295 (0xffffffff). Examples: `-3 -> 3`, `-2.9 -> 2` and `4294967296 -> 
 4294967295`.
+
+
+### `dump()`
+
+| Argument name | Default value | Optional? | Possible values                         |
+|:-------------:|:-------------:|:---------:|:----------------------------------------|
+| Return value  | empty `dict`  |           | A `dict` containing all keys and values |
+
+If a key is found several times in the DB an implementation-specific one of all the values is picked (first, last or 
+random).   
 
 
 ### `flush()`
