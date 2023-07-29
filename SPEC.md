@@ -93,12 +93,12 @@ The argument "Return value" whose name isn't written as code in the argument tab
 
 ### `open()`
 
-|  Argument name  | Default value | Optional? | Possible values                                                                                                                                                                                                                                                                                                 |
-|:---------------:|:-------------:|:---------:|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|    `source`     |               |    No     | - File path, as String<br>- `r` or `rw` binary file handle<br>- `bytes` to act on as if they were the file content<br>- `dict` with zero or more valid key-value pairs, invalid pairs are tried to convert or are otherwise discarded with a warning stating `Could not load key '{{keyname}}', discarding it`. |
-|     `mode`      |    `'rw'`     |    Yes    | String with any combination of letters described in the [modes](#modes) table.                                                                                                                                                                                                                                  |
-| `runtime_flags` |  empty tuple  |    Yes    | A list of strings that specify each one runtime flag name to be enabled. All runtime flags are by default disabled.                                                                                                                                                                                             |
-|  Return value   |               |           | The database object that has been opened by calling this method                                                                                                                                                                                                                                                 |
+|  Argument name  | Default value  | Optional? | Possible values                                                                                                                                                                                                                                                                                                 |
+|:---------------:|:--------------:|:---------:|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|    `source`     |                |    No     | - File path, as String<br>- `r` or `rw` binary file handle<br>- `bytes` to act on as if they were the file content<br>- `dict` with zero or more valid key-value pairs, invalid pairs are tried to convert or are otherwise discarded with a warning stating `Could not load key '{{keyname}}', discarding it`. |
+|     `mode`      |     `'rw'`     |    Yes    | String with any combination of letters described in the [modes](#modes) table.                                                                                                                                                                                                                                  |
+| `runtime_flags` | empty `tuple`  |    Yes    | A list of strings that specify each one runtime flag name to be enabled. All runtime flags are by default disabled.                                                                                                                                                                                             |
+|  Return value   |                |           | The database object that has been opened by calling this method                                                                                                                                                                                                                                                 |
 
 This method populates the `L2DB` with the new content and (if there were more than zero keys in the `L2DB` before) 
 emits a warning stating `Old content of L2DB has been discarded in favor of new content`. This method is also 
@@ -114,7 +114,7 @@ called by the object constructor to populate the database.
 
 This method returns the value of the requested key if possible, if no type is given the data is returned as the stored 
 type. If a type is given it will be converted using [`L2DB.convert()`](#convert) before returning it. Any exceptions 
-raised should not be caught.   
+raised by [`L2DB.convert()`](#convert) should not be caught.   
 If the key doesn't exist, it raises a `L2DBKeyError` exception with the message `{{key}} could not be found`, with 
 `key` in single quotes unless it contains single quotes, in that case with double quotes and any contained double 
 quotes escaped with a backslash.   
@@ -131,7 +131,7 @@ random).
 | Return value  | `{'key':'','val':''}` |           | A `dict` with the keys `key` and `val` which contains the given key and value as if they had been read from the DB |
 
 This method stores any value given to it into the database with the key provided to it.   
-If a specific type is given
+If a specific type is given the values is converted to 
 
 ### `delete()`
 
@@ -151,13 +151,15 @@ double quotes escaped with a backslash.
 
 | Argument name | Default value | Optional? | Possible values                                                                              |
 |:-------------:|:-------------:|:---------:|:---------------------------------------------------------------------------------------------|
-|   `keyname`   |               |    No     | Any string matching a key's name                                                             |
+|   `keyname`   |               |    No     | Any string matching a key's name or (if `fromval` is set) an empty string                    |
 |    `type`     |               |    No     | Any three-letter string matching one of the type Identifiers (see [type table](#valuetypes)) |
+|   `fromval`   |    `None`     |    Yes    | Any value representable as one of the [L2DB-compatible types](#valuetypes)                   |
 | Return value  |               |           | The converted value                                                                          |
 
 Converts the key along with its value to the target type, if that fails a `L2DBTypeError` exception should be raised 
 with the message `Could not convert {{keyname}} to type '{{type}}'`, with `keyname` in single-quotes except if the name 
 contains single-quotes, then double-quotes.   
+If `fromval` is set `keyname` is ignored and the value to convert is taken from `fromval` instead of the DB.   
 If a `flt` is converted to any whole number type it simply loses its decimals (not rounded but cut off) and if any 
 whole number type is converted to `flt` it gets 0 as the only decimal place. Examples: `1.999 -> 1`, `-3.7 -> 3` and 
 `1 -> 1.0`   
