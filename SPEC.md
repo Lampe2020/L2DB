@@ -109,7 +109,7 @@ called by the object constructor to populate the database.
 | Argument name | Default value | Optional? | Possible values                                                                                     |
 |:-------------:|:-------------:|:---------:|:----------------------------------------------------------------------------------------------------|
 |     `key`     |               |    No     | Any string that occurs as a key name in the currently-opened DB                                     |
-|    `type`     |    `None`     |    Yes    | Any three-letter [type Identifier](#valuetypes) that the value should be converted to after reading |
+|    `type`     |    `None`     |    Yes    | Any three-letter [type Identifier](#value-types) that the value should be converted to after reading |
 | Return value  |    `None`     |           | The value of the read key                                                                           |
 
 This method returns the value of the requested key if possible, if no type is given the data is returned as the stored 
@@ -127,7 +127,7 @@ random).
 | Argument name |     Default value     | Optional? | Possible values                                                                                                    |
 |:-------------:|:---------------------:|:---------:|:-------------------------------------------------------------------------------------------------------------------|
 |     `key`     |                       |    No     | Any string that doesn't contain a `null`-byte                                                                      |
-|    `type`     |        `None`         |    Yes    | Any three-letter [type Identifier](#valuetypes) that the stored value should be converted to before writing        |
+|    `type`     |        `None`         |    Yes    | Any three-letter [type Identifier](#value-types) that the stored value should be converted to before writing        |
 | Return value  | `{'key':'','val':''}` |           | A `dict` with the keys `key` and `val` which contains the given key and value as if they had been read from the DB |
 
 This method stores any value given to it into the database with the key provided to it.   
@@ -152,8 +152,8 @@ double quotes escaped with a backslash.
 | Argument name | Default value | Optional? | Possible values                                                                              |
 |:-------------:|:-------------:|:---------:|:---------------------------------------------------------------------------------------------|
 |   `keyname`   |               |    No     | Any string matching a key's name or (if `fromval` is set) an empty string                    |
-|    `type`     |               |    No     | Any three-letter string matching one of the type Identifiers (see [type table](#valuetypes)) |
-|   `fromval`   |    `None`     |    Yes    | Any value representable as one of the [L2DB-compatible types](#valuetypes)                   |
+|    `type`     |               |    No     | Any three-letter string matching one of the type Identifiers (see [type table](#value-types)) |
+|   `fromval`   |    `None`     |    Yes    | Any value representable as one of the [L2DB-compatible types](#value-types)                   |
 | Return value  |               |           | The converted value                                                                          |
 
 Converts the key along with its value to the target type, if that fails a `L2DBTypeError` exception should be raised 
