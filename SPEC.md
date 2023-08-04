@@ -6,7 +6,9 @@
 string shouldn't be taken literally but instead replaced with the appropriate content, if not specified otherwise.
 - "spec", "the spec" or "this spec" in the following document refer to this specification unless otherwise specified.   
 - If the data is stored in a file it should (but doesn't need to) have either the `.dat` or the `.l2db` file extension.
-- The class name in the implementation should be `L2DB`, if several versions are supported `L2DBVer{{version}}`.   
+- The class name in the implementation should be `L2DB`, if several versions are supported `L2DBVer_{{version}}` 
+  (replace `{{version}}` with the version in the format `major_minor_patch`, optionally omitting both minor and patch 
+  version or only patch version).   
 - *Please note that this specification is written with Python3 in mind, if e.g. built-in functions or error types are 
 mentioned you may replace them with your programming language's equivalent.*   
 
@@ -175,7 +177,7 @@ converted to `int` it is set to 4294967295 (0xffffffff). Examples: `-3 -> 3`, `-
 | Return value  | empty `dict`  |           | A `dict` containing all keys and values |
 
 If a key is found several times in the DB an implementation-specific one of all the values is picked (first, last or 
-random).   
+random, the implementer decides which one).   
 
 
 ### `flush()`
