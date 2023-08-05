@@ -16,6 +16,10 @@ L2DB supports the following data types:
 import collections.abc as collections
 import struct
 
+#####################################################################
+# Helper functions - must be moved into `L2DB.__helpers()` later on #
+#####################################################################
+
 def overwrite_in_file(path, offset, data):
     """Overwrite only `len(data)` bytes in file `path` beginning at `offset`"""
     with open(path, 'r+b') as f:
@@ -27,7 +31,34 @@ def getbit(seq, pos):
     """Get only the bit at offset `pos` from the right in number `seq`."""
     return 1&(seq>>pos)
 
+##############
+# Exceptions #
+##############
 
+class L2DBError(Exception):
+    def __init__(self, message=''):
+        super().__init__(self.message)
+
+class L2DBVersionMismatch(L2DBError):
+    def __init__(self, db_ver='0.0.0', imp_ver='0.0.0'):
+        super().__init__(
+            f'The database follows the spec version {db_ver} but the implementation follows the spec version {imp_ver}.\
+             Conversion failed.'
+        )
+
+class L2DBTypeError(L2DBError):
+    def __init__(self, keyname='', ktype='inv'): # Renamed `type` to `ktype` because `type` is a Python3-builtin
+        toreplace = ("'", "\\'")
+        super().__init__(f"Could not convert '{keyname.replace(*toreplace)}' to type '{ktype.replace(*toreplace)}'")
+
+class L2DBKeyError(L2DBError):
+    def __init__(self, key=''):
+        toreplace = ("'", "\\'")
+        super().__init__(f"Key '{key.replace(*toreplace)}' could not be found")
+
+########
+# Test #
+########
 
 if __name__ == '__main__':
     try:

@@ -1,6 +1,6 @@
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
-- Version 1.0.2   
+- Version 1.0.3   
 - Copyright (c) by Lampe2020 <kontakt@lampe2020.de>   
 - If strings in this spec contain a variable name enclosed in double curly braces this means that that part of the 
 string shouldn't be taken literally but instead replaced with the appropriate content, if not specified otherwise.
@@ -226,7 +226,7 @@ errors later on if there is invalid content in the file!**
 Otherwise the method searches for and fixes any errors in the database, such as checking wether all values are 
 readable as their assigned type and if not, if they are readable as any other type, with the fallback being 'raw'. The 
 [header](#header) is completely regenerated in this case. If `dont_rescue` is set to `True` all invalid values are 
-discarded instead of being tried to fix.   
+discarded instead of being tried to fix and the [header](#header) is regenerated.   
 After the check the `DIRTY` flag is reset and (if the runtime-flag `verbose` is set) the errors and fixes are logged.   
 
 
@@ -237,7 +237,7 @@ After the check the `DIRTY` flag is reset and (if the runtime-flag `verbose` is 
 |      `L2DBError`      | empty string                                                                                                                       | Base error type, base class for all other L2DB errors to inherit from                                                                                                    |
 | `L2DBVersionMismatch` | `The database follows the spec version {{db_ver}} but the implementation follows the spec version {{imp_ver}}. Conversion failed.` | `db_ver` is the `major.minor` version of the spec that the database file follows and `imp_ver` is the `major.minor` version of the spec that the implementation follows. |
 |    `L2DBTypeError`    | `Could not convert '{{keyname}}' to type '{{type}}'`                                                                               | `keyname` is the name of the key tried to convert (if it contains single quotes they should be escaped with backslashes) and `type` is the target type.                  |
-|    `L2DBKeyError`     | `{{key}} could not be found`                                                                                                       | `key` is the name of the key that could not be found.                                                                                                                    |
+|    `L2DBKeyError`     | `Key '{{key}}' could not be found`                                                                                                 | `key` is the name of the key that could not be found (if it contains single quotes they should be escaped with backslashes).                                                                                                                    |
 
 
 
