@@ -1,6 +1,6 @@
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
-- Version 0.1   
+- Version 1.0.0   
 - Copyright (c) by Lampe2020 <kontakt@lampe2020.de>   
 - If strings in this spec contain a variable name enclosed in double curly braces this means that that part of the 
 string shouldn't be taken literally but instead replaced with the appropriate content, if not specified otherwise.
@@ -10,7 +10,26 @@ string shouldn't be taken literally but instead replaced with the appropriate co
   (replace `{{version}}` with the version in the format `major_minor_patch`, optionally omitting both minor and patch 
   version or only patch version).   
 - *Please note that this specification is written with Python3 in mind, if e.g. built-in functions or error types are 
-mentioned you may replace them with your programming language's equivalent.*   
+  mentioned you may replace them with your programming language's equivalent. For example can `dict`s be replaced with 
+  associative arrays or (in JS) `Object`s.*   
+
+# Table of contents
+1. [Structure](#structure)
+   1. [Header](#header)
+   2. [Index](#index)
+   3. [Data](#data)
+2. [Value types](#value-types)
+3. [Modes](#modes)
+4. [Methods](#methods)
+   1. [`open()`](#open)
+   2. [`read()`](#read)
+   3. [`write()`](#write)
+   4. [`delete()`](#delete)
+   5. [`convert()`](#convert)
+   6. [`dump()`](#dump)
+   7. [`flush()`](#flush)
+   8. [`cleanup()`](#cleanup)
+5. [Error classes](#error-classes)
 
 ## Structure
 All integers in L2DB are little-endian (the least significant bit comes last, 
@@ -91,9 +110,8 @@ The database can be opened in any combination of the following modes:
 "Optional" arguments have to be implemented but don't need to be specified if the programming language supports that, 
 if the programming language used for the implementation does not support optional arguments they should accept 
 `undefined` (or equivalent) as "argument omitted".   
-The argument "Return value" whose name isn't written as code in the argument tables below is the return value of the method.*
-
-<!-- TODO: Add the remaining method descriptions! -->
+The argument "Return value" whose name isn't written as code in the argument tables below is the return value of the 
+method.*
 
 ### `open()`
 
@@ -120,8 +138,7 @@ This method returns the value of the requested key if possible, if no type is gi
 type. If a type is given it will be converted using [`L2DB.convert()`](#convert) before returning it. Any exceptions 
 raised by [`L2DB.convert()`](#convert) should not be caught.   
 If the key doesn't exist, it raises a `L2DBKeyError` exception with the message `{{key}} could not be found`, with 
-`key` in single quotes unless it contains single quotes, in that case with double quotes and any contained double 
-quotes escaped with a backslash.   
+`key` in single quotes and any contained single quotes escaped with a backslash.   
 If the key is found several times in the DB an implementation-specific one of all the values is picked (first, last or 
 random).   
 
@@ -147,8 +164,7 @@ If a specific type is given the values is converted to
 Removes the given key along with its value from the DB. In file mode this function renames the key to `---deleted---`, 
 removes its value and sets its type to `nul`, no matter if it already exists.    
 If the key doesn't already exist, it raises a `L2DBKeyError` exception with the message `{{key}} could not be 
-found`, with `key` in single quotes unless it contains single quotes, in that case with double quotes and any contained 
-double quotes escaped with a backslash.   
+found`, with `key` in single quotes and any contained single quotes escaped with a backslash.   
 
 
 ### `convert()`
@@ -218,7 +234,7 @@ After the check the `DIRTY` flag is reset and (if the runtime-flag `verbose` is 
 |:---------------------:|:-----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 |      `L2DBError`      | empty string                                                                                                                       | Base error type, base class for all other L2DB errors to inherit from                                                                                                    |
 | `L2DBVersionMismatch` | `The database follows the spec version {{db_ver}} but the implementation follows the spec version {{imp_ver}}. Conversion failed.` | `db_ver` is the `major.minor` version of the spec that the database file follows and `imp_ver` is the `major.minor` version of the spec that the implementation follows. |
-|    `L2DBTypeError`    | `Could not convert {{keyname}} to type '{{type}}'`                                                                                 | `keyname` is the name of the key tried to convert and `type` is the target type.                                                                                         |
+|    `L2DBTypeError`    | `Could not convert '{{keyname}}' to type '{{type}}'`                                                                               | `keyname` is the name of the key tried to convert (if it contains single quotes they should be escaped with backslashes) and `type` is the target type.                  |
 |    `L2DBKeyError`     | `{{key}} could not be found`                                                                                                       | `key` is the name of the key that could not be found.                                                                                                                    |
 
 
