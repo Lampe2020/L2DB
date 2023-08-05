@@ -1,6 +1,6 @@
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
-- Version 1.1.0   
+- Version 1.1.1   
 - Copyright (c) by Christian Lampe <kontakt@lampe2020.de>   
 - If strings in this spec contain a variable name enclosed in double curly braces this means that that part of the 
 string shouldn't be taken literally but instead replaced with the appropriate content, if not specified otherwise.
@@ -166,8 +166,7 @@ If a specific type is given the values is converted to
 | Return value  |        `{'key':'','val':''}`      |           | A `dict` with the keys `key` and `val` which contains the given key and value as they were stored in the DB |
 
 Removes the given key along with its value from the DB.   
-If the key doesn't already exist, it raises a `L2DBKeyError` exception with the message `{{key}} could not be 
-found`, with `key` in single quotes and any contained single quotes escaped with a backslash.   
+If the key doesn't exist, it raises a `L2DBKeyError` exception with the key as an argument.   
 
 
 ### `convert()`
@@ -180,7 +179,7 @@ found`, with `key` in single quotes and any contained single quotes escaped with
 | Return value  |               |           | The converted value                                                                           |
 
 Converts the key along with its value to the target type, if that fails a `L2DBTypeError` exception should be raised 
-with the `key` name and `vtype` and if `fromval` is set `key` should be `None`.   
+with the `key` name and `vtype` as arguments and if `fromval` is set `key` should be `None`.   
 If `fromval` is set the given `key` name is ignored and the value to convert is taken from `fromval` instead of the DB.   
 If a `flt` is converted to any whole number type it simply loses its decimals (not rounded but cut off) and if any 
 whole number type is converted to `flt` it gets 0 as the only decimal place. Examples: `1.999 -> 1`, `-3.7 -> 3` and 
