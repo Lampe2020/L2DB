@@ -1,6 +1,6 @@
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
-- Version 1.0.1   
+- Version 1.0.2   
 - Copyright (c) by Lampe2020 <kontakt@lampe2020.de>   
 - If strings in this spec contain a variable name enclosed in double curly braces this means that that part of the 
 string shouldn't be taken literally but instead replaced with the appropriate content, if not specified otherwise.
@@ -244,6 +244,7 @@ After the check the `DIRTY` flag is reset and (if the runtime-flag `verbose` is 
 <!-- Footnotes: -->
 
 [^1] The "version" in this case refers to a float with the whole-number part being the major version and the decimal 
-part being the minor version. As I try to follow [SemVer](https://semver.org/) the patch version can be omitted.   
+part being the minor version. As I try to follow [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html) the patch version 
+can be omitted.   
 [^2] I chose the largest type available to keep the spec simple, implementations may choose to "compress" them if their 
 value fits into smaller types or simply a smaller type is needed.
