@@ -1,6 +1,6 @@
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
-- Version 1.0.0   
+- Version 1.0.1   
 - Copyright (c) by Lampe2020 <kontakt@lampe2020.de>   
 - If strings in this spec contain a variable name enclosed in double curly braces this means that that part of the 
 string shouldn't be taken literally but instead replaced with the appropriate content, if not specified otherwise.
@@ -9,6 +9,8 @@ string shouldn't be taken literally but instead replaced with the appropriate co
 - The class name in the implementation should be `L2DB`, if several versions are supported `L2DBVer_{{version}}` 
   (replace `{{version}}` with the version in the format `major_minor_patch`, optionally omitting both minor and patch 
   version or only patch version).   
+- File paths may be relative or absolute, the implementation must not restrict the user to usage of only absolute or 
+  only relative paths.   
 - *Please note that this specification is written with Python3 in mind, if e.g. built-in functions or error types are 
   mentioned you may replace them with your programming language's equivalent. For example can `dict`s be replaced with 
   associative arrays or (in JS) `Object`s.*   
@@ -50,12 +52,12 @@ The header (with the file magic included) is always 64 bytes long, with the non-
 |                      16                      |    Flags     | *See flag table below.*                                                       | If all flags are set the byte should have the value 0x83 (`0b10000011`).                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 |                    17-63                     |     none     | *Not assigned yet.*                                                           | Should be filled with`null`-bytes (`\0`). Strict implementations should set the `DIRTY` flag if this is not the case.                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-|   Flag name   |    Flag position    | Flag meaning                                                                                                                                                                                                                                                                                                       |
-|:-------------:|:-------------------:|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|   *unused*    | Byte 14<br>Bits 0-4 | none *Note: strict implementations should automatically reset these if they happen to be set.*                                                                                                                                                                                                                     |
+|   Flag name   |    Flag position    | Flag meaning                                                                                                                                                                                                                                                                                                      |
+|:-------------:|:-------------------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|   *unused*    | Byte 14<br>Bits 0-4 | none *Note: strict implementations should automatically reset these if they happen to be set.*                                                                                                                                                                                                                    |
 |   `LOCKED`    |  Byte 14<br>Bit 5   | The database can only be opened in ['rf' mode](#modes) and each reading action will emit a warning that the database is locked.                                                                                                                                                                                   |
 |    `DIRTY`    |  Byte 14<br>Bit 6   | If any error occurs during reading/writing on the DB this bit gets set.<br>If it is set, each subsequent reading action will emit a warning that the database is dirty and each writing action on the database will fail and raise a `L2DBIsDirty` exception  until the [`cleanup()`](#cleanup) method is called. |
-| `X64_INDEXES` |  Byte 14<br>Bit 7   | If the index numbers are one `uint64` or two `uint32`s                                                                                                                                                                                                                                                             |
+| `X64_INDEXES` |  Byte 14<br>Bit 7   | If the index numbers are one `uint64` or two `uint32`s                                                                                                                                                                                                                                                            |
 
 ### Index
 The index is a long string of entries which give a specific part of the data block a name and type. 
@@ -128,11 +130,11 @@ called by the object constructor to populate the database.
 
 ### `read()`
 
-| Argument name | Default value | Optional? | Possible values                                                                                     |
-|:-------------:|:-------------:|:---------:|:----------------------------------------------------------------------------------------------------|
-|     `key`     |               |    No     | Any string that occurs as a key name in the currently-opened DB                                     |
+| Argument name | Default value | Optional? | Possible values                                                                                      |
+|:-------------:|:-------------:|:---------:|:-----------------------------------------------------------------------------------------------------|
+|     `key`     |               |    No     | Any string that occurs as a key name in the currently-opened DB                                      |
 |    `type`     |    `None`     |    Yes    | Any three-letter [type Identifier](#value-types) that the value should be converted to after reading |
-| Return value  |    `None`     |           | The value of the read key                                                                           |
+| Return value  |    `None`     |           | The value of the read key                                                                            |
 
 This method returns the value of the requested key if possible, if no type is given the data is returned as the stored 
 type. If a type is given it will be converted using [`L2DB.convert()`](#convert) before returning it. Any exceptions 
@@ -148,7 +150,7 @@ random).
 | Argument name |     Default value     | Optional? | Possible values                                                                                                    |
 |:-------------:|:---------------------:|:---------:|:-------------------------------------------------------------------------------------------------------------------|
 |     `key`     |                       |    No     | Any string that doesn't contain a `null`-byte                                                                      |
-|    `type`     |        `None`         |    Yes    | Any three-letter [type Identifier](#value-types) that the stored value should be converted to before writing        |
+|    `type`     |        `None`         |    Yes    | Any three-letter [type Identifier](#value-types) that the stored value should be converted to before writing       |
 | Return value  | `{'key':'','val':''}` |           | A `dict` with the keys `key` and `val` which contains the given key and value as if they had been read from the DB |
 
 This method stores any value given to it into the database with the key provided to it.   
@@ -169,12 +171,12 @@ found`, with `key` in single quotes and any contained single quotes escaped with
 
 ### `convert()`
 
-| Argument name | Default value | Optional? | Possible values                                                                              |
-|:-------------:|:-------------:|:---------:|:---------------------------------------------------------------------------------------------|
-|   `keyname`   |               |    No     | Any string matching a key's name or (if `fromval` is set) an empty string                    |
+| Argument name | Default value | Optional? | Possible values                                                                               |
+|:-------------:|:-------------:|:---------:|:----------------------------------------------------------------------------------------------|
+|   `keyname`   |               |    No     | Any string matching a key's name or (if `fromval` is set) an empty string                     |
 |    `type`     |               |    No     | Any three-letter string matching one of the type Identifiers (see [type table](#value-types)) |
 |   `fromval`   |    `None`     |    Yes    | Any value representable as one of the [L2DB-compatible types](#value-types)                   |
-| Return value  |               |           | The converted value                                                                          |
+| Return value  |               |           | The converted value                                                                           |
 
 Converts the key along with its value to the target type, if that fails a `L2DBTypeError` exception should be raised 
 with the message `Could not convert {{keyname}} to type '{{type}}'`, with `keyname` in single-quotes except if the name 
