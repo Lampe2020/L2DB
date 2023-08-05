@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-The L2DB database format, version 1. (c) Lampe2020 <kontakt@lampe2020.de>
-L2DB supports the following data types:
-    * keys: string (UTF-8-encoded text)
-    * Values: integer (32-bit), long (64-bit), float (32-bit), double (64-bit), string (UTF-8-encoded text), raw (binary data)
+spec_version = '1.1.0'
+implementation_version = '0.1.0-pre-alpha+python3-above-.7'
 
-####################################################################################
-# NOTE that this code doesn't fully comply with the standard defined in SPEC.md! #
-####################################################################################
-→ This is the case because I changed some things when actually coming up with a spec instead of just randomly creating spaghetti code.
+__doc__ = f"""
+L2DB {spec_version} - implementation {implementation_version}   
+Both version numbers follow the SemVer 2.0.0 standard (http://semver.org/spec/v2.0.0.html)   
+   
+Simple binary database format made by Christian Lampe <kontakt@lampe2020.de>   
+   
+Spec: see SPEC.md   
+This module is the Python3-based example implementation of the database format, feel free to make a better 
+implementation.   
+This implementation is a strict implementation, so it follows even the rules for strict implementations.   
 """
 
 import collections.abc as collections
-import struct
+import struct, warnings, semver
 
 #####################################################################
 # Helper functions - must be moved into `L2DB.__helpers()` later on #
@@ -36,25 +39,79 @@ def getbit(seq, pos):
 ##############
 
 class L2DBError(Exception):
+    """L2DB base exception"""
     def __init__(self, message=''):
+        self.message = message
         super().__init__(self.message)
 
 class L2DBVersionMismatch(L2DBError):
-    def __init__(self, db_ver='0.0.0', imp_ver='0.0.0'):
-        super().__init__(
-            f'The database follows the spec version {db_ver} but the implementation follows the spec version {imp_ver}.\
-             Conversion failed.'
-        )
+    """Raised when conversion between spec versions fails"""
+    def __init__(self, db_ver='0.0.0-please+replace', imp_ver=implementation_version):
+        self.message = f'database follows spec version {db_ver} but implementation follows spec version {imp_ver}. Conversion failed.'
+        super().__init__(self.message)
 
 class L2DBTypeError(L2DBError):
-    def __init__(self, keyname='', ktype='inv'): # Renamed `type` to `ktype` because `type` is a Python3-builtin
+    """Raised when conversion between value types fails"""
+    def __init__(self, key='', vtype='inv'): # Renamed `type` to `vtype` because `type` is a Python3-builtin
         toreplace = ("'", "\\'")
-        super().__init__(f"Could not convert '{keyname.replace(*toreplace)}' to type '{ktype.replace(*toreplace)}'")
+        self.message = f"Could not convert key '{key.replace(*toreplace)}' to type '{vtype.replace(*toreplace)}'" if (
+                key!=None) else f"Could not convert value to type '{vtype.replace(*toreplace)}'"
+        super().__init__(self.message)
 
 class L2DBKeyError(L2DBError):
+    """Raised when an unaccessible key is accessed"""
     def __init__(self, key=''):
         toreplace = ("'", "\\'")
-        super().__init__(f"Key '{key.replace(*toreplace)}' could not be found")
+        self.message = f"Key '{key.replace(*toreplace)}' could not be found"
+        super().__init__(self.message)
+
+########
+# L2DB #
+########
+
+class L2DB:
+    __doc__ = f'L2DB {spec_version} in implementation {implementation_version}'
+    spec = spec_version
+    implementation = implementation_version
+    def __init__(self, source, mode, runtime_flags):
+        self.__db = {}
+        self.source, self.mode, self.runtime_flags = source, mode, runtime_flags
+        self.open(source, mode, runtime_flags)
+
+    def open(self, source, mode='rw', runtime_flags=()):
+        """Populates the L2DB with new content and sets its source location if applicable.
+        Accepts modes 'r', 'w', 'f' and any combination of those three."""
+
+    def read(self, key, vtype=None):
+        """Returns the value of the key, optionally converts it to `vtype`.
+        Raises an L2DBKeyError if the key is not found.
+        Raises an L2DBTypeError if the value cannot be converted to the specified `vtype`."""
+
+    def write(self, key, value, vtype=None):
+        """Writes `value` to `key`, optionally converts it to `vtype`.
+        Raises an L2DBKeyError if the key name is invalid.
+        Raises an L2DBTypeError if the value cannot be converted to the specified `vtype`."""
+
+    def delete(self, key):
+        """Removes a key from the L2DB."""
+
+    def convert(self, key, vtype, fromval):
+        """Converts the key or value to type `vtype`."""
+
+    def dump(self):
+        """Dumps all key-value pairs as a `dict`"""
+
+    def flush(self, file=None, move=False):
+        """Flushes the buffered changes to the file the database has been initialized with.
+        If a file is specified this flushes the changes to that file instead and changes the database source to the new
+        file if `move` is True.
+        Raises a FileNotFoundError with the message 'No file specified' if the database has no source file and none is
+        specified."""
+
+    def cleanup(self, only_flag=False, dont_rescue=False):
+        """Tries to repair the database and unsets the `DIRTY` flag.
+        Skips all repairs if `only_flag` is True.
+        Discards corrupted key-value pairs instead of rescuing them if `dont_rescue` is True."""
 
 ########
 # Test #

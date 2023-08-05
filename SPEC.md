@@ -1,7 +1,7 @@
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
-- Version 1.0.3   
-- Copyright (c) by Lampe2020 <kontakt@lampe2020.de>   
+- Version 1.1.0   
+- Copyright (c) by Christian Lampe <kontakt@lampe2020.de>   
 - If strings in this spec contain a variable name enclosed in double curly braces this means that that part of the 
 string shouldn't be taken literally but instead replaced with the appropriate content, if not specified otherwise.
 - "spec", "the spec" or "this spec" in the following document refer to this specification unless otherwise specified.   
@@ -65,7 +65,7 @@ The length of this string is specified in the "Index length" bytes in the [heade
 Each entry consists of 8 bytes for the index number(s) followed by three non-`null` bytes for the value type and a 
 variable amount of non-`null` bytes for the name which is terminated by one `null`-byte. 
 If the type is unknown it will be interpreted as raw and a warning should be emitted stating `Unknown format 
-{{format}}! Interpreting as raw`.   
+{{format}}! Interpreting as 'raw'`.   
 The order of these entries does not need to be maintained but can be.   
 If the flag `X64_INDEXES` is not set the index numbers will be two `uint32`s which refer to the starting and end offset 
 of the value's data.   
@@ -78,9 +78,7 @@ Be aware that in this case the values can still switch order but then the offset
 The data section is a pure concatenation of all values in the whole database. 
 
 ## Value types
-*If implicit type conversions are done, emit a warning `Could not assign '{{new_type}}' to a key of type 
-'{{old_type}}'. Implicitly converted the key to '{{new_type}}'`, with `new_type` being the new value's type Identifier 
-(see table below) and `old_type` being the previous type Identifier (see table below) of the key.   
+*If implicit type conversions are done, emit a warning `Implicitly converted '{{old_type}}' to '{{new_type}}'`.   
 If a type conversion fails or isn't possible, raise a `L2DBTypeError` exception with the message `Could not assign 
 value of type '{{val_type}}' to key of type '{{key_type}}'`, with `val_type` being the value's type Identifier (see 
 table below) and `key_type` being the key's type Identifier (see table below), optionally extend the message with 
@@ -90,7 +88,8 @@ table below) and `key_type` being the key's type Identifier (see table below), o
 |:---------------------:|:----------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 |     Whole number      |   `int`    | Any positive or negative 64-bit whole number. (aka.`long`[^2]) If a positive number too large for a normal `long` is tried to assign, implicitly convert the key to a `uin` if that allows for storing the value, otherwise fail.                                                                                                                                                                                                                        |
 | Positive whole number |   `uin`    | Any positive 64-bit whole number. (aka.`unsigned long`[^2]) If a negative number is tried to assign, implicitly convert the key to a `int` if that allows for storing the value, otherwise fail.                                                                                                                                                                                                                                                         |
-|        Number         |   `flt`    | Any positive or negative 64-bit number. (aka.`double`[^2])                                                                                                                                                                                                                                                                                                                                                                                               |
+| Floating point number |   `flt`    | Any positive or negative 64-bit number. (aka.`double`[^2]) <br>*Note that this will sooner or later be removed in favor of `fpn`*                                                                                                                                                                                                                                                                                                                        |
+|        Number         |   `fpn`    | Any positive or negative 64-bit number, stored in a custom format. <br>*Note: `fpn` should currently automatically get converted to `flt` and strict implementations should emit a warning with the message `'fpn' is not implemented yet as there is no standard for it`*                                                                                                                                                           |
 |        Boolean        |   `bol`    | True or False. Is stored in a single byte which is set to either 0x01 (True) or 0x00 (False). If a `int`, `uin` or `flt` 0 or 1 or raw `null`-byte (`\0`) or one-byte (`\1`) is tried to assign, implicitly convert the value to `True` for 1 and `False` for 0. If `null` is tried to assign, implicitly convert the key to `nul`.<br>*Note: in strict implementations the `DIRTY` bit should be set if this byte is anything other than 0x00 or 0x01!* |
 |        String         |   `str`    | Any UTF-8 encoded string.                                                                                                                                                                                                                                                                                                                                                                                                                                |
 |          Raw          |   `raw`    | Any sequence of bytes.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -117,23 +116,25 @@ method.*
 
 ### `open()`
 
-|  Argument name  | Default value  | Optional? | Possible values                                                                                                                                                                                                                                                                                                 |
-|:---------------:|:--------------:|:---------:|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|    `source`     |                |    No     | - File path, as String<br>- `r` or `rw` binary file handle<br>- `bytes` to act on as if they were the file content<br>- `dict` with zero or more valid key-value pairs, invalid pairs are tried to convert or are otherwise discarded with a warning stating `Could not load key '{{keyname}}', discarding it`. |
-|     `mode`      |     `'rw'`     |    Yes    | String with any combination of letters described in the [modes](#modes) table.                                                                                                                                                                                                                                  |
-| `runtime_flags` | empty `tuple`  |    Yes    | A list of strings that specify each one runtime flag name to be enabled. All runtime flags are by default disabled.                                                                                                                                                                                             |
-|  Return value   |                |           | The database object that has been opened by calling this method                                                                                                                                                                                                                                                 |
+|  Argument name  | Default value  | Optional? | Possible values                                                                                                                                                                                                                                                                                                       |
+|:---------------:|:--------------:|:---------:|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|    `source`     |                |    No     | File path, as String<br>- `rb`, `r+b` or `w+b` file handle<br>- `bytes` to act on as if they were the file content<br>- `dict` with zero or more valid key-value pairs, invalid pairs are tried to convert or are otherwise discarded with a warning stating `Could not load key '{{keyname}}', discarding it`.       |
+|     `mode`      |     `'rw'`     |    Yes    | String with any combination of letters described in the [modes](#modes) table.                                                                                                                                                                                                                                        |
+| `runtime_flags` | empty `tuple`  |    Yes    | A list of strings that specify each one runtime flag name to be enabled. All runtime flags are by default disabled.                                                                                                                                                                                                   |
+|  Return value   |                |           | The database object that has been opened by calling this method                                                                                                                                                                                                                                                       |
 
 This method populates the `L2DB` with the new content and (if there were more than zero keys in the `L2DB` before) 
 emits a warning stating `Old content of L2DB has been discarded in favor of new content`. This method is also 
 called by the object constructor to populate the database.   
+If the `source` is a file handle, `mode` is ignored and taken from the file handle's `mode` attribute. If that 
+is invalid for L2DB the mode is set by the `mode` argument.   
 
 ### `read()`
 
 | Argument name | Default value | Optional? | Possible values                                                                                      |
 |:-------------:|:-------------:|:---------:|:-----------------------------------------------------------------------------------------------------|
 |     `key`     |               |    No     | Any string that occurs as a key name in the currently-opened DB                                      |
-|    `type`     |    `None`     |    Yes    | Any three-letter [type Identifier](#value-types) that the value should be converted to after reading |
+|    `vtype`    |    `None`     |    Yes    | Any three-letter [type Identifier](#value-types) that the value should be converted to after reading |
 | Return value  |    `None`     |           | The value of the read key                                                                            |
 
 This method returns the value of the requested key if possible, if no type is given the data is returned as the stored 
@@ -150,7 +151,8 @@ random).
 | Argument name |     Default value     | Optional? | Possible values                                                                                                    |
 |:-------------:|:---------------------:|:---------:|:-------------------------------------------------------------------------------------------------------------------|
 |     `key`     |                       |    No     | Any string that doesn't contain a `null`-byte                                                                      |
-|    `type`     |        `None`         |    Yes    | Any three-letter [type Identifier](#value-types) that the stored value should be converted to before writing       |
+|    `value`    |                       |    No     | Any value storable in an L2DB format                                                                               |
+|    `vtype`    |        `None`         |    Yes    | Any three-letter [type Identifier](#value-types) that the stored value should be converted to before writing       |
 | Return value  | `{'key':'','val':''}` |           | A `dict` with the keys `key` and `val` which contains the given key and value as if they had been read from the DB |
 
 This method stores any value given to it into the database with the key provided to it.   
@@ -163,8 +165,7 @@ If a specific type is given the values is converted to
 |     `key`     |                                   |    No     | Any string that matches an existing key stored in the DB                                                    |
 | Return value  |        `{'key':'','val':''}`      |           | A `dict` with the keys `key` and `val` which contains the given key and value as they were stored in the DB |
 
-Removes the given key along with its value from the DB. In file mode this function renames the key to `---deleted---`, 
-removes its value and sets its type to `nul`, no matter if it already exists.    
+Removes the given key along with its value from the DB.   
 If the key doesn't already exist, it raises a `L2DBKeyError` exception with the message `{{key}} could not be 
 found`, with `key` in single quotes and any contained single quotes escaped with a backslash.   
 
@@ -173,15 +174,14 @@ found`, with `key` in single quotes and any contained single quotes escaped with
 
 | Argument name | Default value | Optional? | Possible values                                                                               |
 |:-------------:|:-------------:|:---------:|:----------------------------------------------------------------------------------------------|
-|   `keyname`   |               |    No     | Any string matching a key's name or (if `fromval` is set) an empty string                     |
-|    `type`     |               |    No     | Any three-letter string matching one of the type Identifiers (see [type table](#value-types)) |
+|     `key`     |               |    No     | Any string matching a key's name or (if `fromval` is set) an empty string                     |
+|    `vtype`    |               |    No     | Any three-letter string matching one of the type Identifiers (see [type table](#value-types)) |
 |   `fromval`   |    `None`     |    Yes    | Any value representable as one of the [L2DB-compatible types](#value-types)                   |
 | Return value  |               |           | The converted value                                                                           |
 
 Converts the key along with its value to the target type, if that fails a `L2DBTypeError` exception should be raised 
-with the message `Could not convert {{keyname}} to type '{{type}}'`, with `keyname` in single-quotes except if the name 
-contains single-quotes, then double-quotes.   
-If `fromval` is set `keyname` is ignored and the value to convert is taken from `fromval` instead of the DB.   
+with the `key` name and `vtype` and if `fromval` is set `key` should be `None`.   
+If `fromval` is set the given `key` name is ignored and the value to convert is taken from `fromval` instead of the DB.   
 If a `flt` is converted to any whole number type it simply loses its decimals (not rounded but cut off) and if any 
 whole number type is converted to `flt` it gets 0 as the only decimal place. Examples: `1.999 -> 1`, `-3.7 -> 3` and 
 `1 -> 1.0`   
@@ -201,18 +201,18 @@ random, the implementer decides which one).
 
 
 ### `flush()`
-| Argument name | Default value | Optional? | Possible values                                    |
-|:-------------:|:-------------:|:---------:|:---------------------------------------------------|
-|  `filename`   |    `None`     |    Yes    | any string or binary file handle with write access |
-|    `move`     |    `False`    |    Yes    | any boolean                                        |
-| Return value  |               |           |                                                    |
+| Argument name | Default value | Optional? | Possible values                                                                   |
+|:-------------:|:-------------:|:---------:|:----------------------------------------------------------------------------------|
+|    `file`     |    `None`     |    Yes    | any string which is a valid file path or file handle in `wb`, `r+b` or `w+b` mode |
+|    `move`     |    `False`    |    Yes    | any boolean                                                                       |
+| Return value  |               |           |                                                                                   |
 
 This method flushes the buffered changes to the given file 
 or (if none given) to the file the database has been read from.   
 If the database is in [file mode](#modes) this will just clone the database file to the new location, 
 see the [file mode's description](#modes).   
 *Note: If no file is given and none has been used to initialize the database this method shall raise a 
-`FileNotFoundError` with the message `No file specified!`!*
+`FileNotFoundError` with the message `No file specified`!*
 
 ### `cleanup()`
 | Argument name | Default value | Optional? | Possible values                                                                   |
@@ -232,12 +232,12 @@ After the check the `DIRTY` flag is reset and (if the runtime-flag `verbose` is 
 
 ## Error classes
 
-|      Error name       | Default message                                                                                                                    | Explanation                                                                                                                                                              |
-|:---------------------:|:-----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|      `L2DBError`      | empty string                                                                                                                       | Base error type, base class for all other L2DB errors to inherit from                                                                                                    |
-| `L2DBVersionMismatch` | `The database follows the spec version {{db_ver}} but the implementation follows the spec version {{imp_ver}}. Conversion failed.` | `db_ver` is the `major.minor` version of the spec that the database file follows and `imp_ver` is the `major.minor` version of the spec that the implementation follows. |
-|    `L2DBTypeError`    | `Could not convert '{{keyname}}' to type '{{type}}'`                                                                               | `keyname` is the name of the key tried to convert (if it contains single quotes they should be escaped with backslashes) and `type` is the target type.                  |
-|    `L2DBKeyError`     | `Key '{{key}}' could not be found`                                                                                                 | `key` is the name of the key that could not be found (if it contains single quotes they should be escaped with backslashes).                                                                                                                    |
+|      Error name       | Default message                                                                                                    | Explanation                                                                                                                                                              |
+|:---------------------:|:-------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|      `L2DBError`      | empty string                                                                                                       | Base error type, base class for all other L2DB errors to inherit from                                                                                                    |
+| `L2DBVersionMismatch` | `database follows spec version {{db_ver}} but implementation follows spec version {{imp_ver}}. Conversion failed.` | `db_ver` is the `major.minor` version of the spec that the database file follows and `imp_ver` is the `major.minor` version of the spec that the implementation follows. |
+|    `L2DBTypeError`    | `Could not convert key '{{keyname}}' to type '{{type}}'` or `Could not convert value to type '{{type}}'`           | `keyname` is the name of the key tried to convert (if it contains single quotes they should be escaped with backslashes) and `type` is the target type.                  |
+|    `L2DBKeyError`     | `Key '{{key}}' could not be found`                                                                                 | `key` is the name of the key that could not be found (if it contains single quotes they should be escaped with backslashes).                                             |
 
 
 
