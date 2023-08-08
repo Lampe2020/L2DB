@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 spec_version = '1.1.1'
-implementation_version = '0.1.0-pre-alpha+python3-above-.7'
+implementation_version = '0.2.0-pre-alpha+python3-above-.7'
 
 __doc__ = f"""
 L2DB {spec_version} - implementation {implementation_version}   
@@ -68,6 +68,8 @@ class L2DBKeyError(L2DBError):
 ########
 # L2DB #
 ########
+
+#TODO: implement this, as dict of names with type prefixes with the values in binary form (bytes object, b'')
 
 class L2DB:
     __doc__ = f'L2DB {spec_version} in implementation {implementation_version}'
