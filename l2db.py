@@ -18,6 +18,7 @@ This implementation is a strict implementation, so it follows even the rules for
 
 import collections.abc as collections
 import struct, warnings, semver
+NaN = float('nan') # Somehow has no number literal, can only be gotten through a float of the string 'nan'.
 
 #####################################################################
 # Helper functions - must be moved into `L2DB.__helpers()` later on #
@@ -86,26 +87,98 @@ class L2DB:
         or an empty tuple to get all.
         If a non-existing function is requested a KeyError will be raised. """
         import struct
-        def num2bin(num=0):
-            match str(type(num)):
+        def num2bin(n=0, unsigned=False):
+            if n==NaN:
+                warnings.warn('L2DB helper num2bin(n): cannot store NaN')
+                return b''
+            match str(type(n)):
                 case 'int':
-                    ... #TODO: Try first as lowest, then longer and longer until fits
+                    if unsigned: # Requested to be represented as unsigned
+                        if n<0: # Must pe represented as signed
+                            warnings.warn(f"L2DB helper num2bin(n): unsigned numbers cannot be less than zero")
+                            return b''
+                        elif n<256: # Can be represented as char
+                            return struct.pack('>B', n)
+                        elif n<65536: # Can be represented as short
+                            return struct.pack('>H', n)
+                        elif n<4294967296: # Can be represented as int
+                            return struct.pack('>I', n)
+                        elif n<18446744073709551616: # Can be represented as long long
+                            return struct.pack('>Q', n)
+                        else:
+                            ll = 18446744073709551615 # ll → unsigned 'long long' limit
+                            warnings.warn(f"L2DB helper num2bin(n): 'n' is too high to store in L2DB (max is {ll})")
+                            return b''
+                    else: # Must be represented as signed, thus lower boundary
+                        if n in range(-127, 128): # Can be represented as char
+                            return struct.pack('>b', n)
+                        elif n in range(-32768, 32768): # Can be represented as short
+                            return struct.pack('>h', n)
+                        elif n in range(-2147483648, 2147483648): # Can be represented as int
+                            return struct.pack('>i', n)
+                        elif n in range(-9223372036854775808, 9223372036854775808): # Can be represented as long long
+                            return struct.pack('>q', n)
+                        else:
+                            llmin, llmax =  -9223372036854775808, 9223372036854775807
+                            warnings.warn(
+                        f"L2DB helper num2bin(n): 'n' is too large to store in L2DB (must be {llmin} >= num >= {llmax})"
+                            )
                 case 'float':
-                    ... #TODO: Try first as lowest, then longer and longer until fits
+                    if unsigned:
+                        warnings.warn('L2DB helper num2bin(n): Floating point numbers cannot be unsigned')
+                    # I had no better way of doing that other than trying and seeing if it's failing...
+                    try:
+                        return struct.pack('>f', n)
+                    except struct.error:
+                        try:
+                            return struct.pack('>d', n)
+                        except struct.error:
+                            warnings.warn(f"L2DB helper num2bin(n): Failed to store 'n' as float or double")
+                            return b''
                 case _:
-                    warnings.warn(f"L2DB helper num2bin(num): 'num' is of type '{_}', must be a number")
+                    warnings.warn(f"L2DB helper num2bin(n): 'n' is of type '{_}', must be a number")
+                    return b''
 
-        def new_header(spec_ver=-1.0, index_len=0, flags=0):
+        def bin2num(b, astype='uin'):
+            match astype:
+                case 'uin':
+                    return struct.unpack('>Q', b.rjust(8, b'\0')) # An unsigned integer can easily be padded on
+                    # the left with `\0`s without changing its numerical value, so I can save me a lot of checking here.
+                case 'int':
+                    match len(b):
+                        case 0:
+                            warnings.warn("L2DB helper bin2num(b): 'b' is empty")
+                            return NaN
+                        case 1:
+                            return struct.unpack('>b', b)
+                        case 2:
+                            return struct.unpack('>h', b)
+                        case 4:
+                            return struct.unpack('>i', b)
+                        case 8:
+                            return
+
+        def new_header(spec_ver=-0.1, index_len=0, flags=0):
             spec_ver = spec_ver if spec_ver>=0 else float('.'.join(spec_version.split('.')[0:2])) # spec_version is the
                                                                                                  # global version string
             return struct.pack(
-                f'>{"B"*8}fiB{"B"*47}',
-                0x88, 0x4c, 0x32, 0x44, 0x42, 0x00, 0x00, 0x00, # File magic, b'\x88L2DB\0\0\0'
+                f'>QfiB{"B"*47}', # one unsigned long long, one float, one int, one unsigned float, 47B of padding
+                9821280156134670336, # File magic, gets packed to b'\x88L2DB\x00\x00\x00'
                 spec_ver,
                 index_len,
                 flags,
                 *(0 for _ in range(47))
             )
+
+        def get_headerdata(header):
+            headerdata = struct.unpack(f'>QfiB{"B"*47}', header)
+            return {
+                'magic': struct.pack('>Q', headerdata[0]), # Should be b'\x88L2DB\x00\x00\x00'
+                'spec_ver': round(1.1000000236, 3), # Minor version cannot be above 999
+                                      # but rounding is necessary because floats suck and cannot keep most numbers exact
+                'idx_len': headerdata[2],
+                'flags': headerdata[3]
+            }
 
         help_funcs = locals()
         return {fn:help_funcs[fn] for fn in which}
