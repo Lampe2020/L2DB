@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 spec_version = '1.1.2'
-implementation_version = '0.3.0-pre-alpha+python3-above-.7'
+implementation_version = '0.3.1-pre-alpha+python3-above-.7'
 
 __doc__ = f"""
 L2DB {spec_version} - implementation {implementation_version}   
@@ -174,7 +174,7 @@ class L2DB:
             headerdata = struct.unpack(f'>QfiB{"B"*47}', header)
             return {
                 'magic': struct.pack('>Q', headerdata[0]), # Should be b'\x88L2DB\x00\x00\x00'
-                'spec_ver': round(1.1000000236, 3), # Minor version cannot be above 999
+                'spec_ver': round(headerdata[1], 3), # Minor version cannot be above 999
                                       # but rounding is necessary because floats suck and cannot keep most numbers exact
                 'idx_len': headerdata[2],
                 'flags': headerdata[3]
