@@ -1,6 +1,6 @@
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
-- Version 1.1.1   
+- Version 1.1.2   
 - Copyright (c) by Christian Lampe <kontakt@lampe2020.de>   
 - If strings in this spec contain a variable name enclosed in double curly braces this means that that part of the 
 string shouldn't be taken literally but instead replaced with the appropriate content, if not specified otherwise.
@@ -110,18 +110,16 @@ The database can be opened in any combination of the following modes:
 *The following methods are in no particular order and should all be defined if they aren't marked as optional.   
 "Optional" arguments have to be implemented but don't need to be specified if the programming language supports that, 
 if the programming language used for the implementation does not support optional arguments they should accept 
-`undefined` (or equivalent) as "argument omitted".   
-The argument "Return value" whose name isn't written as code in the argument tables below is the return value of the 
-method.*
+`undefined` (or equivalent) as "argument omitted".*
 
 ### `open()`
 
-|  Argument name  | Default value  | Optional? | Possible values                                                                                                                                                                                                                                                                                                       |
-|:---------------:|:--------------:|:---------:|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|    `source`     |                |    No     | File path, as String<br>- `rb`, `r+b` or `w+b` file handle<br>- `bytes` to act on as if they were the file content<br>- `dict` with zero or more valid key-value pairs, invalid pairs are tried to convert or are otherwise discarded with a warning stating `Could not load key '{{keyname}}', discarding it`.       |
-|     `mode`      |     `'rw'`     |    Yes    | String with any combination of letters described in the [modes](#modes) table.                                                                                                                                                                                                                                        |
-| `runtime_flags` | empty `tuple`  |    Yes    | A list of strings that specify each one runtime flag name to be enabled. All runtime flags are by default disabled.                                                                                                                                                                                                   |
-|  Return value   |                |           | The database object that has been opened by calling this method                                                                                                                                                                                                                                                       |
+|  Argument name  | Default value |  Optional?   | Possible values                                                                                                                                                                                                                                                                                                       |
+|:---------------:|:-------------:|:------------:|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|    `source`     |               |      No      | File path, as String<br>- `rb`, `r+b` or `w+b` file handle<br>- `bytes` to act on as if they were the file content<br>- `dict` with zero or more valid key-value pairs, invalid pairs are tried to convert or are otherwise discarded with a warning stating `Could not load key '{{keyname}}', discarding it`.       |
+|     `mode`      |    `'rw'`     |     Yes      | String with any combination of letters described in the [modes](#modes) table.                                                                                                                                                                                                                                        |
+| `runtime_flags` | empty `tuple` |     Yes      | A list of strings that specify each one runtime flag name to be enabled. All runtime flags are by default disabled.                                                                                                                                                                                                   |
+|                 |               | Return value | The database object that has been opened by calling this method                                                                                                                                                                                                                                                       |
 
 This method populates the `L2DB` with the new content and (if there were more than zero keys in the `L2DB` before) 
 emits a warning stating `Old content of L2DB has been discarded in favor of new content`. This method is also 
@@ -131,11 +129,11 @@ is invalid for L2DB the mode is set by the `mode` argument.
 
 ### `read()`
 
-| Argument name | Default value | Optional? | Possible values                                                                                      |
-|:-------------:|:-------------:|:---------:|:-----------------------------------------------------------------------------------------------------|
-|     `key`     |               |    No     | Any string that occurs as a key name in the currently-opened DB                                      |
-|    `vtype`    |    `None`     |    Yes    | Any three-letter [type Identifier](#value-types) that the value should be converted to after reading |
-| Return value  |    `None`     |           | The value of the read key                                                                            |
+| Argument name | Default value |  Optional?   | Possible values                                                                                      |
+|:-------------:|:-------------:|:------------:|:-----------------------------------------------------------------------------------------------------|
+|     `key`     |               |      No      | Any string that occurs as a key name in the currently-opened DB                                      |
+|    `vtype`    |    `None`     |     Yes      | Any three-letter [type Identifier](#value-types) that the value should be converted to after reading |
+|               |    `None`     | Return value | The value of the read key                                                                            |
 
 This method returns the value of the requested key if possible, if no type is given the data is returned as the stored 
 type. If a type is given it will be converted using [`L2DB.convert()`](#convert) before returning it. Any exceptions 
@@ -148,22 +146,22 @@ random).
 
 ### `write()`
 
-| Argument name |     Default value     | Optional? | Possible values                                                                                                    |
-|:-------------:|:---------------------:|:---------:|:-------------------------------------------------------------------------------------------------------------------|
-|     `key`     |                       |    No     | Any string that doesn't contain a `null`-byte                                                                      |
-|    `value`    |                       |    No     | Any value storable in an L2DB format                                                                               |
-|    `vtype`    |        `None`         |    Yes    | Any three-letter [type Identifier](#value-types) that the stored value should be converted to before writing       |
-| Return value  | `{'key':'','val':''}` |           | A `dict` with the keys `key` and `val` which contains the given key and value as if they had been read from the DB |
+| Argument name |     Default value     |  Optional?   | Possible values                                                                                                    |
+|:-------------:|:---------------------:|:------------:|:-------------------------------------------------------------------------------------------------------------------|
+|     `key`     |                       |      No      | Any string that doesn't contain a `null`-byte                                                                      |
+|    `value`    |                       |      No      | Any value storable in an L2DB format                                                                               |
+|    `vtype`    |        `None`         |     Yes      | Any three-letter [type Identifier](#value-types) that the stored value should be converted to before writing       |
+|               | `{'key':'','val':''}` | Return value | A `dict` with the keys `key` and `val` which contains the given key and value as if they had been read from the DB |
 
 This method stores any value given to it into the database with the key provided to it.   
 If a specific type is given the values is converted to 
 
 ### `delete()`
 
-| Argument name |           Default value           | Optional? | Possible values                                                                                             |
-|:-------------:|:---------------------------------:|:---------:|:------------------------------------------------------------------------------------------------------------|
-|     `key`     |                                   |    No     | Any string that matches an existing key stored in the DB                                                    |
-| Return value  |        `{'key':'','val':''}`      |           | A `dict` with the keys `key` and `val` which contains the given key and value as they were stored in the DB |
+| Argument name |     Default value     |  Optional?   | Possible values                                                                                             |
+|:-------------:|:---------------------:|:------------:|:------------------------------------------------------------------------------------------------------------|
+|     `key`     |                       |      No      | Any string that matches an existing key stored in the DB                                                    |
+|               | `{'key':'','val':''}` | Return value | A `dict` with the keys `key` and `val` which contains the given key and value as they were stored in the DB |
 
 Removes the given key along with its value from the DB.   
 If the key doesn't exist, it raises a `L2DBKeyError` exception with the key as an argument.   
@@ -171,12 +169,12 @@ If the key doesn't exist, it raises a `L2DBKeyError` exception with the key as a
 
 ### `convert()`
 
-| Argument name | Default value | Optional? | Possible values                                                                               |
-|:-------------:|:-------------:|:---------:|:----------------------------------------------------------------------------------------------|
-|     `key`     |               |    No     | Any string matching a key's name or (if `fromval` is set) an empty string                     |
-|    `vtype`    |               |    No     | Any three-letter string matching one of the type Identifiers (see [type table](#value-types)) |
-|   `fromval`   |    `None`     |    Yes    | Any value representable as one of the [L2DB-compatible types](#value-types)                   |
-| Return value  |               |           | The converted value                                                                           |
+| Argument name | Default value |  Optional?   | Possible values                                                                               |
+|:-------------:|:-------------:|:------------:|:----------------------------------------------------------------------------------------------|
+|     `key`     |               |      No      | Any string matching a key's name or (if `fromval` is set) an empty string                     |
+|    `vtype`    |               |      No      | Any three-letter string matching one of the type Identifiers (see [type table](#value-types)) |
+|   `fromval`   |    `None`     |     Yes      | Any value representable as one of the [L2DB-compatible types](#value-types)                   |
+|               |               | Return value | The converted value                                                                           |
 
 Converts the key along with its value to the target type, if that fails a `L2DBTypeError` exception should be raised 
 with the `key` name and `vtype` as arguments and if `fromval` is set `key` should be `None`.   
@@ -191,20 +189,20 @@ converted to `int` it is set to 4294967295 (0xffffffff). Examples: `-3 -> 3`, `-
 
 ### `dump()`
 
-| Argument name | Default value | Optional? | Possible values                         |
-|:-------------:|:-------------:|:---------:|:----------------------------------------|
-| Return value  | empty `dict`  |           | A `dict` containing all keys and values |
+| Argument name | Default value |  Optional?   | Possible values                         |
+|:-------------:|:-------------:|:------------:|:----------------------------------------|
+|               | empty `dict`  | Return value | A `dict` containing all keys and values |
 
 If a key is found several times in the DB an implementation-specific one of all the values is picked (first, last or 
 random, the implementer decides which one).   
 
 
 ### `flush()`
-| Argument name | Default value | Optional? | Possible values                                                                   |
-|:-------------:|:-------------:|:---------:|:----------------------------------------------------------------------------------|
-|    `file`     |    `None`     |    Yes    | any string which is a valid file path or file handle in `wb`, `r+b` or `w+b` mode |
-|    `move`     |    `False`    |    Yes    | any boolean                                                                       |
-| Return value  |               |           |                                                                                   |
+| Argument name | Default value |  Optional?   | Possible values                                                                   |
+|:-------------:|:-------------:|:------------:|:----------------------------------------------------------------------------------|
+|    `file`     |    `None`     |     Yes      | any string which is a valid file path or file handle in `wb`, `r+b` or `w+b` mode |
+|    `move`     |    `False`    |     Yes      | any boolean                                                                       |
+|               |               | Return value |                                                                                   |
 
 This method flushes the buffered changes to the given file 
 or (if none given) to the file the database has been read from.   
@@ -214,11 +212,11 @@ see the [file mode's description](#modes).
 `FileNotFoundError` with the message `No file specified`!*
 
 ### `cleanup()`
-| Argument name | Default value | Optional? | Possible values                                                                   |
-|:-------------:|:-------------:|:---------:|:----------------------------------------------------------------------------------|
-|  `only_flag`  |    `False`    |    Yes    | any boolean                                                                       |
-| `dont_rescue` |    `False`    |    Yes    | any boolean                                                                       |
-| Return value  |               |           | A `dict` with the error message strings as keys and fix message strings as values |
+| Argument name | Default value |  Optional?   | Possible values                                                                   |
+|:-------------:|:-------------:|:------------:|:----------------------------------------------------------------------------------|
+|  `only_flag`  |    `False`    |     Yes      | any boolean                                                                       |
+| `dont_rescue` |    `False`    |     Yes      | any boolean                                                                       |
+|               |               | Return value | A `dict` with the error message strings as keys and fix message strings as values |
 
 If `only_flag` is `True` only the `DIRTY` flag will be reset but no errors will be fixed. **Warning: this may cause 
 errors later on if there is invalid content in the file!**   
