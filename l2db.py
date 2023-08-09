@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 spec_version = '1.1.2'
-implementation_version = '0.3.1-pre-alpha+python3-above-.7'
+implementation_version = '0.3.2-pre-alpha+python3-above-.7'
 
 __doc__ = f"""
 L2DB {spec_version} - implementation {implementation_version}   
@@ -142,21 +142,24 @@ class L2DB:
         def bin2num(b, astype='uin'):
             match astype:
                 case 'uin':
-                    return struct.unpack('>Q', b.rjust(8, b'\0')) # An unsigned integer can easily be padded on
-                    # the left with `\0`s without changing its numerical value, so I can save me a lot of checking here.
+                    return struct.unpack('>Q', b.rjust(8, b'\0'))[0] # An unsigned integer can easily be padded
+                        # on the left with `\0`s without changing its numerical value,
+                        # so I can save me a lot of checking here.
                 case 'int':
                     match len(b):
-                        case 0:
-                            warnings.warn("L2DB helper bin2num(b): 'b' is empty")
-                            return NaN
                         case 1:
-                            return struct.unpack('>b', b)
+                            return struct.unpack('>b', b)[0]
                         case 2:
-                            return struct.unpack('>h', b)
+                            return struct.unpack('>h', b)[0]
                         case 4:
-                            return struct.unpack('>i', b)
+                            return struct.unpack('>i', b)[0]
                         case 8:
-                            return
+                            return struct.unpack('>q', b)[0]
+                        case _:
+                            warnings.warn(
+                                f"L2DB helper bin2num(b): 'b' has invalid length of {len(b)} (must be 1, 2, 4 or 8)"
+                            )
+                            return NaN
 
         def new_header(spec_ver=-0.1, index_len=0, flags=0):
             spec_ver = spec_ver if spec_ver>=0 else float('.'.join(spec_version.split('.')[0:2])) # spec_version is the
