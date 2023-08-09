@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-spec_version = '1.1.1'
-implementation_version = '0.2.0-pre-alpha+python3-above-.7'
+spec_version = '1.1.2'
+implementation_version = '0.3.0-pre-alpha+python3-above-.7'
 
 __doc__ = f"""
 L2DB {spec_version} - implementation {implementation_version}   
@@ -75,10 +75,40 @@ class L2DB:
     __doc__ = f'L2DB {spec_version} in implementation {implementation_version}'
     spec = spec_version
     implementation = implementation_version
-    def __init__(self, source, mode, runtime_flags):
+    def __init__(self, source, mode='rw', runtime_flags=()):
         self.__db = {}
         self.source, self.mode, self.runtime_flags = source, mode, runtime_flags
         self.open(source, mode, runtime_flags)
+
+    def __helpers(self, which=()):
+        """Returns the helper functions for internal use.
+        As an argument, supply either a tuple with the string names of the specific functions you need
+        or an empty tuple to get all.
+        If a non-existing function is requested a KeyError will be raised. """
+        import struct
+        def num2bin(num=0):
+            match str(type(num)):
+                case 'int':
+                    ... #TODO: Try first as lowest, then longer and longer until fits
+                case 'float':
+                    ... #TODO: Try first as lowest, then longer and longer until fits
+                case _:
+                    warnings.warn(f"L2DB helper num2bin(num): 'num' is of type '{_}', must be a number")
+
+        def new_header(spec_ver=-1.0, index_len=0, flags=0):
+            spec_ver = spec_ver if spec_ver>=0 else float('.'.join(spec_version.split('.')[0:2])) # spec_version is the
+                                                                                                 # global version string
+            return struct.pack(
+                f'>{"B"*8}fiB{"B"*47}',
+                0x88, 0x4c, 0x32, 0x44, 0x42, 0x00, 0x00, 0x00, # File magic, b'\x88L2DB\0\0\0'
+                spec_ver,
+                index_len,
+                flags,
+                *(0 for _ in range(47))
+            )
+
+        help_funcs = locals()
+        return {fn:help_funcs[fn] for fn in which}
 
     def open(self, source, mode='rw', runtime_flags=()):
         """Populates the L2DB with new content and sets its source location if applicable.
