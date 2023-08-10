@@ -1,6 +1,6 @@
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
-- Version 1.1.2   
+- Version 1.2.0   
 - Copyright (c) by Christian Lampe <kontakt@lampe2020.de>   
 - If strings in this spec contain a variable name enclosed in double curly braces this means that that part of the 
 string shouldn't be taken literally but instead replaced with the appropriate content, if not specified otherwise.
@@ -29,8 +29,9 @@ string shouldn't be taken literally but instead replaced with the appropriate co
    4. [`delete()`](#delete)
    5. [`convert()`](#convert)
    6. [`dump()`](#dump)
-   7. [`flush()`](#flush)
-   8. [`cleanup()`](#cleanup)
+   7. [`dumpbin()`](#dumpbin)
+   8. [`flush()`](#flush)
+   9. [`cleanup()`](#cleanup)
 5. [Error classes](#error-classes)
 
 ## Structure
@@ -195,6 +196,14 @@ converted to `int` it is set to 4294967295 (0xffffffff). Examples: `-3 -> 3`, `-
 
 If a key is found several times in the DB an implementation-specific one of all the values is picked (first, last or 
 random, the implementer decides which one).   
+
+### `dumpbin()`
+
+| Argument name | Default value |  Optional?   | Possible values                                                                  |
+|:-------------:|:-------------:|:------------:|:---------------------------------------------------------------------------------|
+|               | empty `bytes` | Return value | A `bytes` object that contains the database as if it had been written to a file. |
+
+Same as [`dump()`](#dump) but in binary form.  
 
 
 ### `flush()`
