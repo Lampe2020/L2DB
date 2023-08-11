@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import _io
+import _io # Only used for type hints
 
 spec_version:str = '1.2.0' # See SPEC.md
-implementation_version:str = '0.3.3-pre-alpha+python3-above-.7'
+implementation_version:str = '0.3.4-pre-alpha+python3-above-.7'
 
 __doc__:str = f"""
 L2DB {spec_version} - implementation {implementation_version}   
@@ -54,7 +54,8 @@ class L2DBKeyError(L2DBError):
 # L2DB #
 ########
 
-#TODO: implement this, as dict of names with type prefixes with the values in binary form (bytes object, b'')
+#TODO: implement this, store internally (if buffered) as b-string with the whole db inside
+# to make it easier to implement file mode
 
 class L2DB:
     __doc__:str = f'L2DB {spec_version} in implementation {implementation_version}'
@@ -90,11 +91,21 @@ class L2DB:
             """Get only the bit at offset `pos` from the right in number `seq`."""
             return 1 & (seq >> pos)
 
+        def str2bin(s:str):
+            """Converts a string to a UTF-8 encoded byte string.
+            Exists more as a reminder to me that strings have the encode method."""
+            return s.encode('utf-8')
+
+        def bin2str(b:bytes):
+            """Converts a UTF-8 encoded binary string to a string.
+            Exists more as a reminder to me that b-strings have the decode method."""
+            return b.decode('utf-8')
+
         def num2bin(n:int|float=0, unsigned:bool=False) -> bytes:
             """Converts a number object to binary for storage in L2DB"""
             if n==NaN:
                 warnings.warn('L2DB helper num2bin(n): cannot store NaN')
-                return b''
+                return b'\0'
             match str(type(n)):
                 case 'int':
                     if unsigned: # Requested to be represented as unsigned
@@ -139,8 +150,8 @@ class L2DB:
                         except struct.error:
                             warnings.warn(f"L2DB helper num2bin(n): Failed to store 'n' as float or double")
                             return b''
-                case _:
-                    warnings.warn(f"L2DB helper num2bin(n): 'n' is of type '{_}', must be a number")
+                case other:
+                    warnings.warn(f"L2DB helper num2bin(n): 'n' is of type '{other}', must be a number")
                     return b''
 
         def bin2num(b:bytes, astype:str='uin') -> int|float:
@@ -160,11 +171,36 @@ class L2DB:
                             return struct.unpack('>i', b)[0]
                         case 8:
                             return struct.unpack('>q', b)[0]
-                        case _:
+                        case other:
                             warnings.warn(
-                                f"L2DB helper bin2num(b): 'b' has invalid length of {len(b)} (must be 1, 2, 4 or 8)"
+                                f"L2DB helper bin2num(b): 'b' has invalid length of {other} (must be 1, 2, 4 or 8)"
                             )
                             return NaN
+
+        def flag2flag(flags:tuple[str]|int) -> int|tuple[str]|None:
+            """Turns a flag tuple into flag int and the other way around.
+            Silently discards any invalid flag names/bits."""
+            if type(flags)==tuple:
+                rflags:int = 0b00000000 # All flags unset
+                if 'LOCKED' in flags:
+                    rflags += 0b00000100
+                if 'DIRTY' in flags:
+                    rflags += 0b00000010
+                if 'X64_INDEXES' in flags:
+                    rflags += 0b00000001
+                return rflags
+            elif type(flags)==int:
+                rflags:list[str] = [] # No flags set
+                if getbit(seq=flags, pos=2): # getbit counts from the end, not the start
+                    rflags.append('LOCKED')
+                if getbit(seq=flags, pos=1):
+                    rflags.append('DIRTY')
+                if getbit(seq=flags, pos=0):
+                    rflags.append('X64_INDEXES')
+                return tuple(rflags)
+            else:
+                warnings.warn(f"L2DB helper flag2flag(flags): invalid flag format '{type(flags).__name__}' (must be 'tuple' or 'int')")
+                return None
 
         def new_header(spec_ver:float=-0.1, index_len:int=0, flags:int=0) -> bytes:
             """Generates a new header byte string based on the given data"""
