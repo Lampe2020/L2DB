@@ -3,7 +3,7 @@
 import _io # Only used for type hints
 
 spec_version:str = '1.2.0' # See SPEC.md
-implementation_version:str = '0.3.4-pre-alpha+python3-above-.7'
+implementation_version:str = '0.3.5-pre-alpha+python3-above-.7'
 
 __doc__:str = f"""
 L2DB {spec_version} - implementation {implementation_version}   
@@ -101,12 +101,12 @@ class L2DB:
             Exists more as a reminder to me that b-strings have the decode method."""
             return b.decode('utf-8')
 
-        def num2bin(n:int|float=0, unsigned:bool=False) -> bytes:
+        def num2bin(n:int|float, unsigned:bool=False) -> bytes:
             """Converts a number object to binary for storage in L2DB"""
             if n==NaN:
                 warnings.warn('L2DB helper num2bin(n): cannot store NaN')
                 return b'\0'
-            match str(type(n)):
+            match type(n).__name__:
                 case 'int':
                     if unsigned: # Requested to be represented as unsigned
                         if n<0: # Must pe represented as signed
@@ -148,7 +148,7 @@ class L2DB:
                         try:
                             return struct.pack('>d', n)
                         except struct.error:
-                            warnings.warn(f"L2DB helper num2bin(n): Failed to store 'n' as float or double")
+                            warnings.warn(f"L2DB helper num2bin(n): Failed to store {n} as float or double")
                             return b''
                 case other:
                     warnings.warn(f"L2DB helper num2bin(n): 'n' is of type '{other}', must be a number")
@@ -176,6 +176,15 @@ class L2DB:
                                 f"L2DB helper bin2num(b): 'b' has invalid length of {other} (must be 1, 2, 4 or 8)"
                             )
                             return NaN
+                case 'flt':
+                    match len(b):
+                        case 4:
+                            return struct.unpack('>f', b)
+                        case 8:
+                            return struct.unpack('>d', b)
+                        case other:
+                            warnings.warn(f"L2DB helper bin2num(b): invalid buffer length for float (is {other}, must be 4 or 8)")
+                            return NaN
 
         def flag2flag(flags:tuple[str]|int) -> int|tuple[str]|None:
             """Turns a flag tuple into flag int and the other way around.
@@ -199,7 +208,7 @@ class L2DB:
                     rflags.append('X64_INDEXES')
                 return tuple(rflags)
             else:
-                warnings.warn(f"L2DB helper flag2flag(flags): invalid flag format '{type(flags).__name__}' (must be 'tuple' or 'int')")
+                warnings.warn(f"L2DB helper flag2flag(flags): invalid flag format '{type(flags).__name__}' (must be 'tuple[str]' or 'int')")
                 return None
 
         def new_header(spec_ver:float=-0.1, index_len:int=0, flags:int=0) -> bytes:
@@ -222,14 +231,16 @@ class L2DB:
                 warnings.warn('L2DB helper get_headerdata(header): invalid file magic')
             return {
                 'magic': struct.pack('>Q', headerdata[0]), # Should be b'\x88L2DB\x00\x00\x00'
-                'spec_ver': round(headerdata[1], 3), # Minor version cannot be above 999
-                                      # but rounding is necessary because floats suck and cannot keep most numbers exact
+                'spec_ver': round(headerdata[1], 4), # Minor version cannot be above 9999
+         # but rounding is necessary because floats suck and cannot keep most numbers exact (e.g. 1.1→1.100000023841858)
                 'idx_len': headerdata[2],
                 'flags': headerdata[3]
             }
 
         help_funcs:dict[str, any] = locals()
-        return {fn:help_funcs[fn] for fn in which}
+        return {fn:help_funcs[fn] for fn in (which or help_funcs) if not fn in ('struct', '__builtins__')}
+                # Returns either the specified or all if 'which' tuple is falsey (empty)
+                # Excludes all that are in the exclude list
 
     def open(
             self,
