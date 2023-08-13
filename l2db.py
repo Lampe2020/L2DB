@@ -3,7 +3,7 @@
 import _io # Only used for type hints
 
 spec_version:str = '1.2.0' # See SPEC.md
-implementation_version:str = '0.3.5-pre-alpha+python3-above-.7'
+implementation_version:str = '0.3.6-pre-alpha+python3-above-.7'
 
 __doc__:str = f"""
 L2DB {spec_version} - implementation {implementation_version}   
@@ -141,15 +141,23 @@ class L2DB:
                 case 'float':
                     if unsigned:
                         warnings.warn('L2DB helper num2bin(n): Floating point numbers cannot be unsigned')
-                    # I had no better way of doing that other than trying and seeing if it's failing...
-                    try:
+                    fltmax:tuple[float] = struct.unpack(
+                        '>ff',
+                        b'\x019Dp\x7f\x7f\xff\xff'
+                        # Min and max single-precision float value (2.2250738585072014e-308, 1.7976931348623157e+308)
+                    )
+                    dblmax:tuple[float] = struct.unpack(
+                        '>dd',
+                        b'\x00\x10\x00\x00\x00\x00\x00\x00\x7f\xef\xff\xff\xff\xff\xff\xff'
+                        # Min and max double-precision float value (3.402823507664669e-38, 3.4028234663852886e+38)
+                    )
+                    if (n>fltmax[0])and(fltmax[1]>n):
                         return struct.pack('>f', n)
-                    except struct.error:
-                        try:
-                            return struct.pack('>d', n)
-                        except struct.error:
-                            warnings.warn(f"L2DB helper num2bin(n): Failed to store {n} as float or double")
-                            return b''
+                    elif (n>dblmax[0])and(dblmax[1]>n):
+                        return struct.pack('>d', n)
+                    else:
+                        warnings.warn(f"L2DB helper num2bin(n): Failed to store {n} as float or double")
+                        return b''
                 case other:
                     warnings.warn(f"L2DB helper num2bin(n): 'n' is of type '{other}', must be a number")
                     return b''
