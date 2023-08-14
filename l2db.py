@@ -3,7 +3,7 @@
 import _io # Only used for type hints
 
 spec_version:str = '1.2.0' # See SPEC.md
-implementation_version:str = '0.3.6-pre-alpha+python3-above-.7'
+implementation_version:str = '0.3.7-pre-alpha+python3-above-.7'
 
 __doc__:str = f"""
 L2DB {spec_version} - implementation {implementation_version}   
@@ -38,7 +38,7 @@ class L2DBVersionMismatch(L2DBError):
 class L2DBTypeError(L2DBError):
     """Raised when conversion between value types fails"""
     def __init__(self, key:str='', vtype:str='inv') -> None: # Renamed `type` to `vtype`: `type` is a Python3-builtin
-        toreplace:tuple = ("'", "\\'")
+        toreplace:tuple[str] = ("'", "\\'")
         self.message = f"Could not convert key '{key.replace(*toreplace)}' to type '{vtype.replace(*toreplace)}'" if (
                 key!=None) else f"Could not convert value to type '{vtype.replace(*toreplace)}'"
         super().__init__(self.message)
@@ -46,7 +46,7 @@ class L2DBTypeError(L2DBError):
 class L2DBKeyError(L2DBError):
     """Raised when an unaccessible key is accessed"""
     def __init__(self, key:str='') -> None:
-        toreplace = ("'", "\\'")
+        toreplace:tuple[str] = ("'", "\\'")
         self.message = f"Key '{key.replace(*toreplace)}' could not be found"
         super().__init__(self.message)
 
@@ -156,8 +156,11 @@ class L2DB:
                     elif (n>dblmax[0])and(dblmax[1]>n):
                         return struct.pack('>d', n)
                     else:
-                        warnings.warn(f"L2DB helper num2bin(n): Failed to store {n} as float or double")
-                        return b''
+                        try:
+                            return struct.pack('>d', n) # Just try it if it failed the tests but is possible
+                        except (struct.error, OverflowError) as err:
+                            warnings.warn(f"L2DB helper num2bin(n): Failed to store {n} as float or double")
+                            return b''
                 case other:
                     warnings.warn(f"L2DB helper num2bin(n): 'n' is of type '{other}', must be a number")
                     return b''
