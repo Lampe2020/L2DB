@@ -1,6 +1,6 @@
 # L2DB file format specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
-- Version 1.2.0   
+- Version 1.2.1   
 - Copyright (c) by Christian Lampe <kontakt@lampe2020.de>   
 - If strings in this spec contain a variable name enclosed in double curly braces this means that that part of the 
 string shouldn't be taken literally but instead replaced with the appropriate content, if not specified otherwise.
@@ -126,7 +126,8 @@ This method populates the `L2DB` with the new content and (if there were more th
 emits a warning stating `Old content of L2DB has been discarded in favor of new content`. This method is also 
 called by the object constructor to populate the database.   
 If the `source` is a file handle, `mode` is ignored and taken from the file handle's `mode` attribute. If that 
-is invalid for L2DB the mode is set by the `mode` argument.   
+is invalid for L2DB the mode is set to `'r'` and a warning is emitted stating that 
+`L2DB cannot be initialized in '{{file handle's mode}}' mode!`.   
 
 ### `read()`
 

@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 import _io # Only used for type hints
 
-spec_version:str = '1.2.0' # See SPEC.md
-implementation_version:str = '0.3.7-pre-alpha+python3-above-.7'
+spec_version:str = '1.2.1' # See SPEC.md
+implementation_version:str = '0.3.8-pre-alpha+python3-above-.7'
 
 __doc__:str = f"""
 L2DB {spec_version} - implementation {implementation_version}   
@@ -67,8 +67,8 @@ class L2DB:
             mode:str='rw',
             runtime_flags:tuple=()
     ) -> None:
-        self.__db:dict[str, str|int|float|bytes|bool|None] = {}
-        self.source:dict[str, str|int|float|bytes|bool|None]|_io.BytesIO|_io.BufferedRandom|str = source
+        self.__db:dict[str,bytes] = {'header': self.__helpers()['new_header'](), 'index': b'', 'values': b''}
+        self.source:dict[str,str|int|float|bytes|bool|None]|_io.BytesIO|_io.BufferedRandom|str = source
         self.mode:str = mode
         self.runtime_flags:tuple = runtime_flags
         self.open(source, mode, runtime_flags)
@@ -261,6 +261,47 @@ class L2DB:
     ) -> any:
         """Populates the L2DB with new content and sets its source location if applicable.
         Accepts modes 'r', 'w', 'f' and any combination of those three."""
+        helpers:dict[str,any] = self.__helpers()
+        if type(source).__name__ in ('bytes', 'dict', 'str', 'BufferedReader', 'BufferedWriter'):
+            olddb:dict[str,any] = self.__db
+            if helpers['get_headerdata'](self.__db['header'])['idx_len']:
+                warnings.warn('Old content of L2DB has been discarded in favor of new content')
+            self.__db:dict[str,bytes] = {'header': b'', 'index': b'', 'values': b''}
+            self.source:dict[str,str|int|float|bytes|bool|None]|_io.BytesIO|_io.BufferedRandom|str = source
+            self.mode: str = mode
+            self.runtime_flags: tuple = runtime_flags
+            match type(self.source).__name__:
+                case 'bytes':
+                    self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}'
+                    idxlen:int = helpers['get_headerdata'](self.source[:64])['idx_len']
+                    self.__db = {
+                        'header': self.source[:64], # The header is always exactly 64 bytes long
+                        'index': self.source[64:64+idxlen],
+                        'values': self.source[64+idxlen:] # Everything after the index is values
+                    }
+                case 'dict':
+                    self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}'
+                    self.__db = {
+                        'header': helpers['new_header'](),
+                        'index': b'',
+                        'values': b''
+                    }
+                    for key in self.source:
+                        self.write(key=key, value=self.source[key]) # Add all key-value pairs to DB
+                case 'str'|'BufferedReader':
+                    self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}{"f" if "f" in self.mode.lower() else ""}'
+                    ... #TODO: Implement this!
+                        # Note that only this sort of input supports unbuffered ('f', file) mode!
+                case 'BufferedWriter':
+                    self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}'
+                    warnings.warn('L2DB.open(): given file reference is write-only, all previous content is lost!')
+                    self.__db = {
+                        'header': helpers['new_header'](),
+                        'index': b'',
+                        'values': b''
+                    }
+        else:
+            raise TypeError(f"L2DB.open(): 'source' argument is of type '{type(source).__name__}' (must be 'bytes', 'dict', 'str' or 'BufferedReader')")
 
     def read(self, key:str, vtype:str|None=None) -> str|int|float|bytes|bool|None:
         """Returns the value of the key, optionally converts it to `vtype`.
