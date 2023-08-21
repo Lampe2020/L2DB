@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 import _io # Only used for type hints
 
-spec_version:str = '1.2.1' # See SPEC.md
-implementation_version:str = '0.3.8-pre-alpha+python3-above-.7'
+spec_version:str = '2.0.0' # See SPEC.md
+implementation_version:str = '0.3.9-pre-alpha+python3-above-.7'
 
 __doc__:str = f"""
 L2DB {spec_version} - implementation {implementation_version}   
@@ -222,30 +222,32 @@ class L2DB:
                 warnings.warn(f"L2DB helper flag2flag(flags): invalid flag format '{type(flags).__name__}' (must be 'tuple[str]' or 'int')")
                 return None
 
-        def new_header(spec_ver:float=-0.1, index_len:int=0, flags:int=0) -> bytes:
+        def new_header(spec_ver:str='x.x.x', index_len:int=0, flags:int=0) -> bytes:
             """Generates a new header byte string based on the given data"""
-            spec_ver = spec_ver if spec_ver>=0 else float('.'.join(spec_version.split('.')[0:2])) # spec_version is the
-                                                                                                 # global version string
+            try:
+                spec_ver = tuple(int(v) for v in (spec_ver if spec_ver!='x.x.x' else spec_version).split('.')[:3])
+            except Exception as err:
+                warnings.warn('L2DB helper new_header(): spec_ver has to be three positive full numbers separated by dots, no more and no less!')
+                spec_ver = tuple(int(v) for v in spec_version.split('.'))
             return struct.pack(
-                f'>QfiB{"B"*47}', # one unsigned long long, one float, one int, one unsigned float, 47B of padding
+                f'>QHHHiB{"B"*45}', # one unsigned long long, one float, one int, one unsigned float, 47B of padding
                 9821280156134670336, # File magic, gets packed to b'\x88L2DB\x00\x00\x00'
-                spec_ver,
+                *spec_ver,
                 index_len,
                 flags,
-                *(0 for _ in range(47))
+                *(0 for _ in range(45))
             )
 
         def get_headerdata(header:bytes) -> dict[str, bytes|int]:
             """Extracts the header data from a given byte string of length 64"""
-            headerdata = struct.unpack(f'>QfiB{"B"*47}', header)
+            headerdata = struct.unpack(f'>QHHHiB{"B"*45}', header)
             if headerdata[0]!=9821280156134670336:
                 warnings.warn('L2DB helper get_headerdata(header): invalid file magic')
             return {
                 'magic': struct.pack('>Q', headerdata[0]), # Should be b'\x88L2DB\x00\x00\x00'
-                'spec_ver': round(headerdata[1], 4), # Minor version cannot be above 9999
-         # but rounding is necessary because floats suck and cannot keep most numbers exact (e.g. 1.1→1.100000023841858)
-                'idx_len': headerdata[2],
-                'flags': headerdata[3]
+                'spec_ver': '{}.{}.{}'.format(*headerdata[1:4]),
+                'idx_len': headerdata[4],
+                'flags': headerdata[5]
             }
 
         help_funcs:dict[str, any] = locals()
@@ -294,7 +296,9 @@ class L2DB:
                         # Note that only this sort of input supports unbuffered ('f', file) mode!
                 case 'BufferedWriter':
                     self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}'
-                    warnings.warn('L2DB.open(): given file reference is write-only, all previous content is lost!')
+                    warnings.warn(
+                        'L2DB.open(): given file reference is write-only, all previous content in that file is lost!'
+                    )
                     self.__db = {
                         'header': helpers['new_header'](),
                         'index': b'',
