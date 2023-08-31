@@ -63,16 +63,12 @@ The header (with the file magic included) is always 64 bytes long, with the non-
 ### Index
 The index is a long string of entries which give a specific part of the data block a name and type. 
 The length of this string is specified in the "Index length" bytes in the [header](#header).   
-Each entry consists of 8 bytes for the index number(s) followed by three non-`null` bytes for the value type and a 
-variable amount of non-`null` bytes for the name which is terminated by one `null`-byte. 
+Each entry consists of 8 bytes (flag `X64_INDEXES` unset) or 16 bytes (flag `X64_INDEXES` set) for the index numbers 
+followed by three non-`null` bytes for the value type and a variable amount of non-`null` bytes for the name which is 
+terminated by one `null`-byte. 
 If the type is unknown it will be interpreted as raw and a warning should be emitted stating `Unknown format 
 {{format}}! Interpreting as 'raw'`.   
 The order of these entries does not need to be maintained but can be.   
-If the flag `X64_INDEXES` is not set the index numbers will be two `uint32`s which refer to the starting and end offset 
-of the value's data.   
-If it is set then the index number is one `uint64` which refers to the offset where the value's data 
-starts, the end index is found by getting the next value's starting index. The last value ends at the file end. 
-Be aware that in this case the values can still switch order but then the offsets need to be recalculated!   
 *Note: the indexed offsets are relative to the first data byte as byte 0, **not** the first byte of the file!*   
 
 ### Data
@@ -90,7 +86,7 @@ table below) and `key_type` being the key's type Identifier (see table below), o
 |     Whole number      |   `int`    | Any positive or negative 64-bit whole number. (aka.`long`[^2]) If a positive number too large for a normal `long` is tried to assign, implicitly convert the key to a `uin` if that allows for storing the value, otherwise fail.                                                                                                                                                                                                                        |
 | Positive whole number |   `uin`    | Any positive 64-bit whole number. (aka.`unsigned long`[^2]) If a negative number is tried to assign, implicitly convert the key to a `int` if that allows for storing the value, otherwise fail.                                                                                                                                                                                                                                                         |
 | Floating point number |   `flt`    | Any positive or negative 64-bit number. (aka.`double`[^2]) <br>*Note that this will sooner or later be removed in favor of `fpn`*                                                                                                                                                                                                                                                                                                                        |
-|  Fixed point number   |   `fpn`    | Any positive or negative 64-bit number, stored in a custom format. <br>*Note: `fpn` should currently automatically get converted to `flt` and strict implementations should emit a warning with the message `'fpn' is not implemented yet as there is no standard for it`*                                                                                                                                                           |
+|  Fixed point number   |   `fpn`    | Any positive or negative 64-bit number, stored in a custom format. <br>*Note: `fpn` should currently automatically get converted to `flt` and strict implementations should emit a warning with the message `'fpn' is not implemented yet as there is no standard for it`*                                                                                                                                                                               |
 |        Boolean        |   `bol`    | True or False. Is stored in a single byte which is set to either 0x01 (True) or 0x00 (False). If a `int`, `uin` or `flt` 0 or 1 or raw `null`-byte (`\0`) or one-byte (`\1`) is tried to assign, implicitly convert the value to `True` for 1 and `False` for 0. If `null` is tried to assign, implicitly convert the key to `nul`.<br>*Note: in strict implementations the `DIRTY` bit should be set if this byte is anything other than 0x00 or 0x01!* |
 |        String         |   `str`    | Any UTF-8 encoded string.                                                                                                                                                                                                                                                                                                                                                                                                                                |
 |          Raw          |   `raw`    | Any sequence of bytes.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
