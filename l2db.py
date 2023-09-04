@@ -32,7 +32,7 @@ class L2DBVersionMismatch(L2DBError):
     """Raised when conversion between spec versions fails"""
     # imp_ver stands for "implemented version" in this case, not "implementation version".
     def __init__(self, db_ver:str='0.0.0-please+replace', imp_ver:str=spec_version) -> None:
-        self.message = f'database follows spec version {db_ver} but implementation follows spec version {imp_ver}. Conversion failed.'
+        self.message = f'Major version mismatch ({db_ver} vs {imp_ver}). Conversion failed.'
         super().__init__(self.message)
 
 class L2DBTypeError(L2DBError):
@@ -69,12 +69,29 @@ class L2DB:
             runtime_flags:tuple=()
     ) -> None:
         self.__db:dict[str,bytes] = {'header': self.__helpers()['new_header'](), 'index': b'', 'values': b''}
-        self.source:dict[str,str|int|float|bytes|bool|None]\
+        self.__source:dict[str,str|int|float|bytes|bool|None]\
                     |BytesIO|BufferedReader|BufferedRandom|BufferedWriter|str = source
         self.__fileref:BytesIO|FileIO|BufferedReader|BufferedRandom|BufferedWriter|None = None
-        self.mode:str = mode
+        self.__mode:str = mode
         self.runtime_flags:tuple = runtime_flags
         self.open(source, mode, runtime_flags)
+
+    source = property((lambda self: self.__source))
+    mode = property((lambda self: self.__mode))
+
+    def __enter__(self):
+        """Enable L2DB to be used as a Context Manager."""
+        return self
+
+    def __exit__(self, *exargs):
+        """Enable L2DB to be used as a Context Manager.
+        This method ignores all arguments you throw at it besides `self`."""
+        self.flush()
+        self.__db = {'header': b'', 'index': b'', 'values': b''}
+        self.__source = None
+        self.__mode = ''
+        #print(exargs) #debug
+        
 
     def __helpers(self, which:tuple=()) -> dict[str, any]:
         """Returns the helper functions for internal use.
@@ -272,37 +289,37 @@ class L2DB:
             if helpers['get_headerdata'](self.__db['header'])['idx_len']:
                 warnings.warn('Old content of L2DB has been discarded in favor of new content')
             self.__db:dict[str,bytes] = {'header': b'', 'index': b'', 'values': b''}
-            self.source:dict[str, str|int|float|bytes|bool|None]\
+            self.__source:dict[str, str|int|float|bytes|bool|None]\
                         |BytesIO|BufferedReader|BufferedRandom|BufferedWriter|str = source
-            self.mode: str = mode
+            self.__mode: str = mode
             self.runtime_flags: tuple = runtime_flags
-            match type(self.source).__name__:
+            match type(self.__source).__name__:
                 case 'bytes':
-                    if 'f' in self.mode.lower():
+                    if 'f' in self.__mode.lower():
                         warnings.warn('L2DB.open(): ')
-                    self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}'
-                    idxlen:int = helpers['get_headerdata'](self.source[:64])['idx_len']
+                    self.__mode = f'{"r" if "r" in self.__mode.lower() else ""}{"w" if "w" in self.__mode.lower() else ""}'
+                    idxlen:int = helpers['get_headerdata'](self.__source[:64])['idx_len']
                     self.__db = {
-                        'header': self.source[:64], # The header is always exactly 64 bytes long
-                        'index': self.source[64:64+idxlen],
-                        'values': self.source[64+idxlen:] # Everything after the index is values
+                        'header': self.__source[:64], # The header is always exactly 64 bytes long
+                        'index': self.__source[64:64+idxlen],
+                        'values': self.__source[64+idxlen:] # Everything after the index is values
                     }
                 case 'dict':
-                    self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}'
+                    self.__mode = f'{"r" if "r" in self.__mode.lower() else ""}{"w" if "w" in self.__mode.lower() else ""}'
                     self.__db = {
                         'header': helpers['new_header'](),
                         'index': b'',
                         'values': b''
                     }
-                    for key in self.source:
-                        self.write(key=key, value=self.source[key]) # Add all key-value pairs to DB
+                    for key in self.__source:
+                        self.write(key=key, value=self.__source[key]) # Add all key-value pairs to DB
                 case 'str'|'BufferedReader'|'BufferedRandom':
-                    self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}{"f" if "f" in self.mode.lower() else ""}'
-                    self.__fileref = (open(self.source, f'r{"+" if "w" in self.mode else ""}b')
-                                      if type(self.source)==str else self.source)
+                    self.__mode = f'{"r" if "r" in self.__mode.lower() else ""}{"w" if "w" in self.__mode.lower() else ""}{"f" if "f" in self.__mode.lower() else ""}'
+                    self.__fileref = (open(self.__source, f'r{"+" if "w" in self.__mode else ""}b')
+                                      if type(self.__source)==str else self.__source)
                     self.__fileref.seek(0)
                     self.__db['header'] = self.__fileref.read(64)
-                    if not 'f' in self.mode:
+                    if not 'f' in self.__mode:
                         headerdata = helpers['get_headerdata'](self.__db['header'])
                         self.__db['index'] = self.__fileref.read(headerdata['idx_len'])
                         self.__db['values'] = self.__fileref.read() # read the rest
@@ -311,7 +328,7 @@ class L2DB:
                     #TODO: Implement this!
                     # Note that only this sort of input supports unbuffered ('f', file) mode!
                 case 'BufferedWriter':
-                    self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}'
+                    self.__mode = f'{"r" if "r" in self.__mode.lower() else ""}{"w" if "w" in self.__mode.lower() else ""}'
                     warnings.warn(
                         'L2DB.open(): given file reference is write-only, all previous content in that file is lost!'
                     )
