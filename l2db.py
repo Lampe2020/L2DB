@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from io import FileIO, BytesIO, BufferedReader, BufferedRandom, BufferedWriter # Used for type hinting
+from types import TracebackType                                                # Used for type hinting
 
 spec_version:str = '2.0.0' # See SPEC.md
 implementation_version:str = '0.3.9-pre-alpha+python3-above-.7'
@@ -83,14 +84,17 @@ class L2DB:
         """Enable L2DB to be used as a Context Manager."""
         return self
 
-    def __exit__(self, *exargs):
+    def __exit__(self, err_type:Exception|None=None, err_val:Exception|None=None, err_tb:TracebackType|None=None):
         """Enable L2DB to be used as a Context Manager.
         This method ignores all arguments you throw at it besides `self`."""
         self.flush()
         self.__db = {'header': b'', 'index': b'', 'values': b''}
         self.__source = None
         self.__mode = ''
-        #print(exargs) #debug
+        if err_type: # If an error was passed to the context manager
+            from traceback import format_exc
+            print(f'\n\n[!] L2DB context manager cought an exception:\n{format_exc(33, err_val)}\n   --> Exception handled in L2DB context manager.\n')
+            return True # Signal that the error has been handled
         
 
     def __helpers(self, which:tuple=()) -> dict[str, any]:
