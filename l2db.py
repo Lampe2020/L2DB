@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import _io # Only used for type hints
+from io import FileIO, BytesIO, BufferedReader, BufferedRandom, BufferedWriter # Used for type hinting
 
 spec_version:str = '2.0.0' # See SPEC.md
 implementation_version:str = '0.3.9-pre-alpha+python3-above-.7'
@@ -63,12 +63,15 @@ class L2DB:
     implementation:str = implementation_version
     def __init__(
             self,
-            source:dict[str, str|int|float|bytes|bool|None]|_io.BytesIO|_io.BufferedRandom|str,
+            source:dict[str, str|int|float|bytes|bool|None]\
+                   |BytesIO|FileIO|BufferedReader|BufferedRandom|BufferedWriter|str,
             mode:str='rw',
             runtime_flags:tuple=()
     ) -> None:
         self.__db:dict[str,bytes] = {'header': self.__helpers()['new_header'](), 'index': b'', 'values': b''}
-        self.source:dict[str,str|int|float|bytes|bool|None]|_io.BytesIO|_io.BufferedRandom|str = source
+        self.source:dict[str,str|int|float|bytes|bool|None]\
+                    |BytesIO|BufferedReader|BufferedRandom|BufferedWriter|str = source
+        self.__fileref:BytesIO|FileIO|BufferedReader|BufferedRandom|BufferedWriter|None = None
         self.mode:str = mode
         self.runtime_flags:tuple = runtime_flags
         self.open(source, mode, runtime_flags)
@@ -247,7 +250,7 @@ class L2DB:
                 'magic': struct.pack('>Q', headerdata[0]), # Should be b'\x88L2DB\x00\x00\x00'
                 'spec_ver': '{}.{}.{}'.format(*headerdata[1:4]),
                 'idx_len': headerdata[4],
-                'flags': headerdata[5]
+                'flags': flag2flag(headerdata[5])
             }
 
         help_funcs:dict[str, any] = locals()
@@ -257,23 +260,26 @@ class L2DB:
 
     def open(
             self,
-            source:dict[str, str|int|float|bytes|bool|None]|_io.BytesIO|_io.BufferedRandom|str,
+            source:dict[str, str|int|float|bytes|bool|None]\
+                   |BytesIO|FileIO|BufferedReader|BufferedRandom|BufferedWriter|str,
             mode:str='rw',
             runtime_flags:tuple[str]=()
     ) -> any:
         """Populates the L2DB with new content and sets its source location if applicable.
         Accepts modes 'r', 'w', 'f' and any combination of those three."""
         helpers:dict[str,any] = self.__helpers()
-        if type(source).__name__ in ('bytes', 'dict', 'str', 'BufferedReader', 'BufferedWriter'):
-            olddb:dict[str,any] = self.__db
+        if type(source).__name__ in ('bytes', 'dict', 'str', 'BufferedReader', 'BufferedRandom', 'BufferedWriter'):
             if helpers['get_headerdata'](self.__db['header'])['idx_len']:
                 warnings.warn('Old content of L2DB has been discarded in favor of new content')
             self.__db:dict[str,bytes] = {'header': b'', 'index': b'', 'values': b''}
-            self.source:dict[str,str|int|float|bytes|bool|None]|_io.BytesIO|_io.BufferedRandom|str = source
+            self.source:dict[str, str|int|float|bytes|bool|None]\
+                        |BytesIO|BufferedReader|BufferedRandom|BufferedWriter|str = source
             self.mode: str = mode
             self.runtime_flags: tuple = runtime_flags
             match type(self.source).__name__:
                 case 'bytes':
+                    if 'f' in self.mode.lower():
+                        warnings.warn('L2DB.open(): ')
                     self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}'
                     idxlen:int = helpers['get_headerdata'](self.source[:64])['idx_len']
                     self.__db = {
@@ -290,10 +296,20 @@ class L2DB:
                     }
                     for key in self.source:
                         self.write(key=key, value=self.source[key]) # Add all key-value pairs to DB
-                case 'str'|'BufferedReader':
+                case 'str'|'BufferedReader'|'BufferedRandom':
                     self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}{"f" if "f" in self.mode.lower() else ""}'
-                    ... #TODO: Implement this!
-                        # Note that only this sort of input supports unbuffered ('f', file) mode!
+                    self.__fileref = (open(self.source, f'r{"+" if "w" in self.mode else ""}b')
+                                      if type(self.source)==str else self.source)
+                    self.__fileref.seek(0)
+                    self.__db['header'] = self.__fileref.read(64)
+                    if not 'f' in self.mode:
+                        headerdata = helpers['get_headerdata'](self.__db['header'])
+                        self.__db['index'] = self.__fileref.read(headerdata['idx_len'])
+                        self.__db['values'] = self.__fileref.read() # read the rest
+                        self.__fileref.close()
+                        self.__fileref = None
+                    #TODO: Implement this!
+                    # Note that only this sort of input supports unbuffered ('f', file) mode!
                 case 'BufferedWriter':
                     self.mode = f'{"r" if "r" in self.mode.lower() else ""}{"w" if "w" in self.mode.lower() else ""}'
                     warnings.warn(
@@ -334,7 +350,7 @@ class L2DB:
     def dumpbin(self) -> bytes:
         """Dumps the whole database as a binary string"""
 
-    def flush(self, file:_io.BytesIO|_io.BufferedRandom|str|None=None, move:bool=False) -> None:
+    def flush(self, file:BytesIO|BufferedReader|BufferedRandom|BufferedWriter|str|None=None, move:bool=False) -> None:
         """Flushes the buffered changes to the file the database has been initialized with.
         If a file is specified this flushes the changes to that file instead and changes the database source to the new
         file if `move` is True.

@@ -63,9 +63,9 @@ The header (with the file magic included) is always 64 bytes long, with the non-
 ### Index
 The index is a long string of entries which give a specific part of the data block a name and type. 
 The length of this string is specified in the "Index length" bytes in the [header](#header).   
-Each entry consists of 8 bytes (flag `X64_INDEXES` unset) or 16 bytes (flag `X64_INDEXES` set) for the index numbers 
-followed by three non-`null` bytes for the value type and a variable amount of non-`null` bytes for the name which is 
-terminated by one `null`-byte. 
+Each entry consists of 8 bytes (flag `X64_INDEXES` unset, so two 32-bit `int`s) or 16 bytes (flag `X64_INDEXES` set, so 
+two 64-bit `long long`s) for the index numbers followed by three non-`null` bytes for the value type and a variable 
+amount of non-`null` bytes for the name which is terminated by one `null`-byte. 
 If the type is unknown it will be interpreted as raw and a warning should be emitted stating `Unknown format 
 {{format}}! Interpreting as 'raw'`.   
 The order of these entries does not need to be maintained but can be.   
