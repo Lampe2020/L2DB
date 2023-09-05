@@ -41,7 +41,7 @@ class L2DBTypeError(L2DBError):
     def __init__(self, key:str='', vtype:str='inv') -> None: # Renamed `type` to `vtype`: `type` is a Python3-builtin
         toreplace:tuple[str] = ("'", "\\'")
         self.message = f"Could not convert key '{key.replace(*toreplace)}' to type '{vtype.replace(*toreplace)}'" if (
-                key!=None) else f"Could not convert value to type '{vtype.replace(*toreplace)}'"
+                                        key!=None) else f"Could not convert value to type '{vtype.replace(*toreplace)}'"
         super().__init__(self.message)
 
 class L2DBKeyError(L2DBError):
@@ -62,8 +62,7 @@ class L2DB:
     __doc__:str = f'L2DB {spec_version} in implementation {implementation_version}'
     spec:str = spec_version
     implementation:str = implementation_version
-    def __init__(
-            self,
+    def __init__(self,
             source:dict[str, str|int|float|bytes|bool|None]\
                    |BytesIO|FileIO|BufferedReader|BufferedRandom|BufferedWriter|str,
             mode:str='rw',
@@ -84,16 +83,21 @@ class L2DB:
         """Enable L2DB to be used as a Context Manager."""
         return self
 
-    def __exit__(self, err_type:Exception|None=None, err_val:Exception|None=None, err_tb:TracebackType|None=None):
+    def __exit__(self,
+            err_type:BaseException|None=None,
+            err_val:BaseException|None=None,
+            err_tb:TracebackType|None=None) -> bool|None:
         """Enable L2DB to be used as a Context Manager.
-        This method ignores all arguments you throw at it besides `self`."""
-        self.flush()
-        self.__db = {'header': b'', 'index': b'', 'values': b''}
+        This method flushes, then clears the opened database
+        and handles any error raised but not caught inside the context."""
+        self.flush() # Save all changes to disk if necessary
         self.__source = None
         self.__mode = ''
+        self.__db = {'header': b'', 'index': b'', 'values': b''}
         if err_type: # If an error was passed to the context manager
-            from traceback import format_exc
-            print(f'\n\n[!] L2DB context manager cought an exception:\n{format_exc(33, err_val)}\n   --> Exception handled in L2DB context manager.\n')
+            from traceback import format_exception
+            print(f'''\n\n[!] L2DB context manager cought an exception:\n{"".join(
+                  format_exception(err_type, err_val, err_tb))}\n   --> Exception handled in L2DB context manager.\n''')
             return True # Signal that the error has been handled
         
 
@@ -193,9 +197,8 @@ class L2DB:
             """Converts a binary string to a number for usage"""
             match astype:
                 case 'uin':
-                    return struct.unpack('>Q', b.rjust(8, b'\0'))[0] # An unsigned integer can easily be padded
-                        # on the left with `\0`s without changing its numerical value,
-                        # so I can save me a lot of checking here.
+                    return struct.unpack('>Q', b.rjust(8, b'\0'))[0] # An unsigned integer can easily be padded on the
+                        # left with `\0`s without changing its numerical value, so I can save me a lot of checking here.
                 case 'int':
                     match len(b):
                         case 1:
@@ -218,7 +221,8 @@ class L2DB:
                         case 8:
                             return struct.unpack('>d', b)
                         case other:
-                            warnings.warn(f"L2DB helper bin2num(b): invalid buffer length for float (is {other}, must be 4 or 8)")
+                            warnings.warn(f"""L2DB helper bin2num(b): invalid buffer length for float (is {other
+                                                                                                  }, must be 4 or 8)""")
                             return NaN
 
         def flag2flag(flags:tuple[str]|int) -> int|tuple[str]|None:
@@ -243,7 +247,8 @@ class L2DB:
                     rflags.append('X64_INDEXES')
                 return tuple(rflags)
             else:
-                warnings.warn(f"L2DB helper flag2flag(flags): invalid flag format '{type(flags).__name__}' (must be 'tuple[str]' or 'int')")
+                warnings.warn(f"""L2DB helper flag2flag(flags): invalid flag format '{type(flags)
+                                                                         .__name__}' (must be 'tuple[str]' or 'int')""")
                 return None
 
         def new_header(spec_ver:str='x.x.x', index_len:int=0, flags:int=0) -> bytes:
@@ -251,7 +256,8 @@ class L2DB:
             try:
                 spec_ver = tuple(int(v) for v in (spec_ver if spec_ver!='x.x.x' else spec_version).split('.')[:3])
             except Exception as err:
-                warnings.warn('L2DB helper new_header(): spec_ver has to be three positive full numbers separated by dots, no more and no less!')
+                warnings.warn(f'''L2DB helper new_header(): spec_ver has to be three positive full numbers{' '
+                                                                            }separated by dots, no more and no less!''')
                 spec_ver = tuple(int(v) for v in spec_version.split('.'))
             return struct.pack(
                 f'>QHHHiB{"B"*45}', # one unsigned long long, one float, one int, one unsigned float, 47B of padding
@@ -279,8 +285,7 @@ class L2DB:
                 # Returns either the specified or all if 'which' tuple is falsey (empty)
                 # Excludes all that are in the exclude list
 
-    def open(
-            self,
+    def open(self,
             source:dict[str, str|int|float|bytes|bool|None]\
                    |BytesIO|FileIO|BufferedReader|BufferedRandom|BufferedWriter|str,
             mode:str='rw',
@@ -301,7 +306,8 @@ class L2DB:
                 case 'bytes':
                     if 'f' in self.__mode.lower():
                         warnings.warn('L2DB.open(): ')
-                    self.__mode = f'{"r" if "r" in self.__mode.lower() else ""}{"w" if "w" in self.__mode.lower() else ""}'
+                    self.__mode = f'''{"r" if "r" in self.__mode.lower() else ""}{"w"
+                                                                               if "w" in self.__mode.lower() else ""}'''
                     idxlen:int = helpers['get_headerdata'](self.__source[:64])['idx_len']
                     self.__db = {
                         'header': self.__source[:64], # The header is always exactly 64 bytes long
@@ -309,7 +315,8 @@ class L2DB:
                         'values': self.__source[64+idxlen:] # Everything after the index is values
                     }
                 case 'dict':
-                    self.__mode = f'{"r" if "r" in self.__mode.lower() else ""}{"w" if "w" in self.__mode.lower() else ""}'
+                    self.__mode = f'''{"r" if "r" in self.__mode.lower() else ""}{"w"
+                                                                               if "w" in self.__mode.lower() else ""}'''
                     self.__db = {
                         'header': helpers['new_header'](),
                         'index': b'',
@@ -318,7 +325,8 @@ class L2DB:
                     for key in self.__source:
                         self.write(key=key, value=self.__source[key]) # Add all key-value pairs to DB
                 case 'str'|'BufferedReader'|'BufferedRandom':
-                    self.__mode = f'{"r" if "r" in self.__mode.lower() else ""}{"w" if "w" in self.__mode.lower() else ""}{"f" if "f" in self.__mode.lower() else ""}'
+                    self.__mode = f'''{"r" if "r" in self.__mode.lower() else ""}{"w"
+                                    if "w" in self.__mode.lower() else ""}{"f" if "f" in self.__mode.lower() else ""}'''
                     self.__fileref = (open(self.__source, f'r{"+" if "w" in self.__mode else ""}b')
                                       if type(self.__source)==str else self.__source)
                     self.__fileref.seek(0)
@@ -332,7 +340,8 @@ class L2DB:
                     #TODO: Implement this!
                     # Note that only this sort of input supports unbuffered ('f', file) mode!
                 case 'BufferedWriter':
-                    self.__mode = f'{"r" if "r" in self.__mode.lower() else ""}{"w" if "w" in self.__mode.lower() else ""}'
+                    self.__mode = f'''{"r" if "r" in self.__mode.lower() else ""}{"w"
+                                                                               if "w" in self.__mode.lower() else ""}'''
                     warnings.warn(
                         'L2DB.open(): given file reference is write-only, all previous content in that file is lost!'
                     )
@@ -342,7 +351,8 @@ class L2DB:
                         'values': b''
                     }
         else:
-            raise TypeError(f"L2DB.open(): 'source' argument is of type '{type(source).__name__}' (must be 'bytes', 'dict', 'str' or 'BufferedReader')")
+            raise TypeError(f"""L2DB.open(): 'source' argument is of type '{type(source)
+                                                    .__name__}' (must be 'bytes', 'dict', 'str' or 'BufferedReader')""")
 
     def read(self, key:str, vtype:str|None=None) -> str|int|float|bytes|bool|None:
         """Returns the value of the key, optionally converts it to `vtype`.
