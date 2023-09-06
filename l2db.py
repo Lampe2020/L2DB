@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 from io import FileIO, BytesIO, BufferedReader, BufferedRandom, BufferedWriter # Used for type hinting
 from types import TracebackType                                                # Used for type hinting
+from traceback import format_exception
 
 spec_version:str = '2.0.0' # See SPEC.md
 implementation_version:str = '0.3.9-pre-alpha+python3-above-.7'
@@ -76,7 +77,7 @@ class L2DB:
         self.runtime_flags:tuple = runtime_flags
         self.open(source, mode, runtime_flags)
 
-    source = property((lambda self: self.__source))
+    source = property((lambda self: self.__source.copy()))
     mode = property((lambda self: self.__mode))
 
     def __enter__(self):
@@ -90,12 +91,15 @@ class L2DB:
         """Enable L2DB to be used as a Context Manager.
         This method flushes, then clears the opened database
         and handles any error raised but not caught inside the context."""
-        self.flush() # Save all changes to disk if necessary
+        try:
+            self.flush() # Save all changes to disk if necessary
+        except Exception as err:
+            print(f'''[!] Error while flushing L2DB after context manager:\n{"".join(
+                       format_exception(type(err), err, err.__traceback__))}\n   --> Some data may have gotten lost.''')
         self.__source = None
         self.__mode = ''
         self.__db = {'header': b'', 'index': b'', 'values': b''}
         if err_type: # If an error was passed to the context manager
-            from traceback import format_exception
             print(f'''\n\n[!] L2DB context manager cought an exception:\n{"".join(
                   format_exception(err_type, err_val, err_tb))}\n   --> Exception handled in L2DB context manager.\n''')
             return True # Signal that the error has been handled
@@ -285,6 +289,10 @@ class L2DB:
                 # Returns either the specified or all if 'which' tuple is falsey (empty)
                 # Excludes all that are in the exclude list
 
+    def __flag(self, name:str):
+        """Tell if a flag is set"""
+        return name in self.__helpers()['flag2flag'](self.__db['header'][18])
+
     def open(self,
             source:dict[str, str|int|float|bytes|bool|None]\
                    |BytesIO|FileIO|BufferedReader|BufferedRandom|BufferedWriter|str,
@@ -358,6 +366,37 @@ class L2DB:
         """Returns the value of the key, optionally converts it to `vtype`.
         Raises an L2DBKeyError if the key is not found.
         Raises an L2DBTypeError if the value cannot be converted to the specified `vtype`."""
+        helpers = self.__helpers()
+        # Fetch index entry
+        #for nameoffset in self.__db['index'].finditer(key.encode('utf-8')+b'\0'):
+        #    if self.__db['index'][nameoffset-(16+3 if self.__flag('X64_INDEXES') else 8+3)] == 0:
+        #        break # Found the exact key, not just one that ends with the same.
+        nameoffset = self.__db['index'].find(key.encode('utf-8')+b'\0')
+        entry = self.__db['index'][nameoffset-(16+3 if self.__flag('X64_INDEXES') else 8+3):nameoffset+len(key)+1]
+        stored_type = self.__db['index'][nameoffset-3:nameoffset].decode('utf-8')
+        # Fetch raw value
+        if self.__flag('X64_INDEXES'):
+            voffsets = struct.unpack('>QQ', entry[:16])
+        else:
+            voffsets = struct.unpack('>I', entry[:8])
+        rawvalue = self.__db['values'][voffsets[0]:voffsets[1]]
+        # Convert to usable type
+        match stored_type:
+            case 'raw':
+                value = rawvalue
+            case 'str':
+                value = rawvalue.decode('utf-8')
+            case 'int'|'uin'|'flt'|'fpn':
+                value = helpers['bin2num'](rawvalue, stored_type)
+            case 'bol':
+                value = bool(rawvalue[0])
+            case other:
+                warnings.warn(f"L2DB.read(): Invalid stored type '{other}', interpreting as raw!")
+        # If user wants to read as another type, convert it
+        if vtype:
+            return self.convert(None, vtype, value)
+        else:
+            return value
 
     def write(
             self,
