@@ -493,7 +493,7 @@ class L2DB:
         else:
             voffsets = struct.unpack('>II', entry[:8])
         # Decide whether to write to the current data space or to move the key to the end of the DB.
-        newval =
+        newval = b'' #TODO: implement this!
 
     def delete(self, key:str) -> dict[str, str|int|float|bytes|bool|None]:
         """Removes a key from the L2DB."""
