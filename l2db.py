@@ -20,9 +20,12 @@ This implementation is a strict implementation, so it follows even the rules for
 """
 
 import collections.abc as collections
-import struct, warnings, semver
+import struct, sys, semver
 NaN:float = float('NaN') # Somehow has no number literal, can only be gotten through a float of the string 'NaN'.
 Infinity:float = float('Infinity') # Same here, but here two strings ('inf' and 'infinity') are both valid for float().
+
+class L2DBWarning(Warning):
+    ...
 
 class L2DBError(Exception):
     """L2DB base exception"""
@@ -63,6 +66,11 @@ class L2DB:
     __doc__:str = f'L2DB {spec_version} in implementation {implementation_version}'
     spec:str = spec_version
     implementation:str = implementation_version
+    
+    def __warn(self, *msg, **kwargs):
+        """Print a message to stderr. Identical to `print` except no `file=` parameter"""
+        return print(*msg, file=sys.stderr, **kwargs)
+    
     def __init__(self,
             source:dict[str, str|int|float|bytes|bool|None]\
                    |BytesIO|FileIO|BufferedReader|BufferedRandom|BufferedWriter|str,
@@ -136,13 +144,13 @@ class L2DB:
         def num2bin(n:int|float, unsigned:bool=False) -> bytes:
             """Converts a number object to binary for storage in L2DB"""
             if n==NaN:
-                warnings.warn('L2DB helper num2bin(n): cannot store NaN')
+                self.__warn('L2DB helper num2bin(n): cannot store NaN')
                 return b'\0'
             match type(n).__name__:
                 case 'int':
                     if unsigned: # Requested to be represented as unsigned
                         if n<0: # Must pe represented as signed
-                            warnings.warn(f"L2DB helper num2bin(n): unsigned numbers cannot be less than zero")
+                            self.__warn(f"L2DB helper num2bin(n): unsigned numbers cannot be less than zero")
                             return b''
                         elif n<256: # Can be represented as char
                             return struct.pack('>B', n)
@@ -154,7 +162,7 @@ class L2DB:
                             return struct.pack('>Q', n)
                         else:
                             ll = 18446744073709551615 # ll → unsigned 'long long' limit
-                            warnings.warn(f"L2DB helper num2bin(n): 'n' is too high to store in L2DB (max is {ll})")
+                            self.__warn(f"L2DB helper num2bin(n): 'n' is too high to store in L2DB (max is {ll})")
                             return b''
                     else: # Must be represented as signed, thus lower boundary
                         if n in range(-127, 128): # Can be represented as char
@@ -167,12 +175,12 @@ class L2DB:
                             return struct.pack('>q', n)
                         else:
                             llmin, llmax =  -9223372036854775808, 9223372036854775807
-                            warnings.warn(
+                            self.__warn(
                         f"L2DB helper num2bin(n): 'n' is too large to store in L2DB (must be {llmin} >= num >= {llmax})"
                             )
                 case 'float':
                     if unsigned:
-                        warnings.warn('L2DB helper num2bin(n): Floating point numbers cannot be unsigned')
+                        self.__warn('L2DB helper num2bin(n): Floating point numbers cannot be unsigned')
                     fltmax:tuple[float] = struct.unpack(
                         '>ff',
                         b'\x019Dp\x7f\x7f\xff\xff'
@@ -191,10 +199,10 @@ class L2DB:
                         try:
                             return struct.pack('>d', n) # Just try it if it failed the tests but is possible
                         except (struct.error, OverflowError) as err:
-                            warnings.warn(f"L2DB helper num2bin(n): Failed to store {n} as float or double")
+                            self.__warn(f"L2DB helper num2bin(n): Failed to store {n} as float or double")
                             return b''
                 case other:
-                    warnings.warn(f"L2DB helper num2bin(n): 'n' is of type '{other}', must be a number")
+                    self.__warn(f"L2DB helper num2bin(n): 'n' is of type '{other}', must be a number")
                     return b''
 
         def bin2num(b:bytes, astype:str='uin') -> int|float:
@@ -214,7 +222,7 @@ class L2DB:
                         case 8:
                             return struct.unpack('>q', b)[0]
                         case other:
-                            warnings.warn(
+                            self.__warn(
                                 f"L2DB helper bin2num(b): 'b' has invalid length of {other} (must be 1, 2, 4 or 8)"
                             )
                             return NaN
@@ -225,7 +233,7 @@ class L2DB:
                         case 8:
                             return struct.unpack('>d', b)
                         case other:
-                            warnings.warn(f"""L2DB helper bin2num(b): invalid buffer length for float (is {other
+                            self.__warn(f"""L2DB helper bin2num(b): invalid buffer length for float (is {other
                                                                                                   }, must be 4 or 8)""")
                             return NaN
 
@@ -251,7 +259,7 @@ class L2DB:
                     rflags.append('X64_INDEXES')
                 return tuple(rflags)
             else:
-                warnings.warn(f"""L2DB helper flag2flag(flags): invalid flag format '{type(flags)
+                self.__warn(f"""L2DB helper flag2flag(flags): invalid flag format '{type(flags)
                                                                          .__name__}' (must be 'tuple[str]' or 'int')""")
                 return None
 
@@ -260,7 +268,7 @@ class L2DB:
             try:
                 spec_ver = tuple(int(v) for v in (spec_ver if spec_ver!='x.x.x' else spec_version).split('.')[:3])
             except Exception as err:
-                warnings.warn(f'''L2DB helper new_header(): spec_ver has to be three positive full numbers{' '
+                self.__warn(f'''L2DB helper new_header(): spec_ver has to be three positive full numbers{' '
                                                                             }separated by dots, no more and no less!''')
                 spec_ver = tuple(int(v) for v in spec_version.split('.'))
             return struct.pack(
@@ -276,7 +284,7 @@ class L2DB:
             """Extracts the header data from a given byte string of length 64"""
             headerdata = struct.unpack(f'>QHHHiB{"B"*45}', header)
             if headerdata[0]!=9821280156134670336:
-                warnings.warn('L2DB helper get_headerdata(header): invalid file magic')
+                self.__warn('L2DB helper get_headerdata(header): invalid file magic')
             return {
                 'magic': struct.pack('>Q', headerdata[0]), # Should be b'\x88L2DB\x00\x00\x00'
                 'spec_ver': '{}.{}.{}'.format(*headerdata[1:4]),
@@ -304,7 +312,7 @@ class L2DB:
         helpers:dict[str,any] = self.__helpers()
         if type(source).__name__ in ('bytes', 'dict', 'str', 'BufferedReader', 'BufferedRandom', 'BufferedWriter'):
             if helpers['get_headerdata'](self.__db['header'])['idx_len']:
-                warnings.warn('Old content of L2DB has been discarded in favor of new content')
+                self.__warn('Old content of L2DB has been discarded in favor of new content')
             self.__db:dict[str,bytes] = {'header': b'', 'index': b'', 'values': b''}
             self.__source:dict[str, str|int|float|bytes|bool|None]\
                         |BytesIO|BufferedReader|BufferedRandom|BufferedWriter|str = source
@@ -313,7 +321,7 @@ class L2DB:
             match type(self.__source).__name__:
                 case 'bytes':
                     if 'f' in self.__mode.lower():
-                        warnings.warn('L2DB.open(): ')
+                        self.__warn('L2DB.open(): ')
                     self.__mode = f'''{"r" if "r" in self.__mode.lower() else ""}{"w"
                                                                                if "w" in self.__mode.lower() else ""}'''
                     idxlen:int = helpers['get_headerdata'](self.__source[:64])['idx_len']
@@ -350,7 +358,7 @@ class L2DB:
                 case 'BufferedWriter':
                     self.__mode = f'''{"r" if "r" in self.__mode.lower() else ""}{"w"
                                                                                if "w" in self.__mode.lower() else ""}'''
-                    warnings.warn(
+                    self.__warn(
                         'L2DB.open(): given file reference is write-only, all previous content in that file is lost!'
                     )
                     self.__db = {
@@ -371,7 +379,19 @@ class L2DB:
         #for nameoffset in self.__db['index'].finditer(key.encode('utf-8')+b'\0'):
         #    if self.__db['index'][nameoffset-(16+3 if self.__flag('X64_INDEXES') else 8+3)] == 0:
         #        break # Found the exact key, not just one that ends with the same.
-        nameoffset = self.__db['index'].find(key.encode('utf-8')+b'\0')
+        offsets:list[int] = [i for i in range(len(self.__db['index']))
+                                                         if self.__db['index'].startswith(key.encode('utf-8')+b'\0', i)]
+        #nameoffset:int = self.__db['index'].find(key.encode('utf-8')+b'\0')
+        so_many = self.__db['index'].count(key.encode('utf-8') + b'\0') #debug
+        if so_many > 1:
+            self.__warn(f'L2DB.read(): possibly returning wrong value for {repr(key)}! (found {so_many} occurrences!)')
+        else:
+            print(f'Found {repr(key)} {so_many} time{"" if so_many == 1 else "s"}.')
+        #print(offsets, nameoffset) #debug
+        for offset in offsets:
+            nameoffset = offset
+            if self.__db['index'][nameoffset-(16+3 if self.__flag('X64_INDEXES') else 8+3)] == 0:
+                break
         entry = self.__db['index'][nameoffset-(16+3 if self.__flag('X64_INDEXES') else 8+3):nameoffset+len(key)+1]
         stored_type = self.__db['index'][nameoffset-3:nameoffset].decode('utf-8')
         # Fetch raw value
@@ -391,7 +411,8 @@ class L2DB:
             case 'bol':
                 value = bool(rawvalue[0])
             case other:
-                warnings.warn(f"L2DB.read(): Invalid stored type '{other}', interpreting as raw!")
+                self.__warn(f"L2DB.read(): Invalid stored type '{other}', interpreting as raw!")
+                value = rawvalue
         # If user wants to read as another type, convert it
         if vtype:
             return self.convert(None, vtype, value)
@@ -407,6 +428,20 @@ class L2DB:
         """Writes `value` to `key`, optionally converts it to `vtype`.
         Raises an L2DBKeyError if the key name is invalid.
         Raises an L2DBTypeError if the value cannot be converted to the specified `vtype`."""
+        ##################################################################
+        # NOTE: look at L2DB.read() for locating the value, update both! #
+        ##################################################################
+        helpers = self.__helpers()
+        # Fetch index entry
+        nameoffset = self.__db['index'].find(key.encode('utf-8') + b'\0')
+        entry = self.__db['index'][
+                nameoffset - (16 + 3 if self.__flag('X64_INDEXES') else 8 + 3):nameoffset + len(key) + 1]
+        stored_type = self.__db['index'][nameoffset - 3:nameoffset].decode('utf-8')
+        # Fetch raw value
+        if self.__flag('X64_INDEXES'):
+            voffsets = struct.unpack('>QQ', entry[:16])
+        else:
+            voffsets = struct.unpack('>I', entry[:8])
 
     def delete(self, key:str) -> dict[str, str|int|float|bytes|bool|None]:
         """Removes a key from the L2DB."""
