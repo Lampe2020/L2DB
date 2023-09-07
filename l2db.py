@@ -292,6 +292,21 @@ class L2DB:
                 'flags': flag2flag(headerdata[5])
             }
 
+        def get_keyidx(key:str):
+            """Returns a key's index entry"""
+            # Fetch index entry
+            offsets: list[int] = [i for i in range(len(self.__db['index']))
+                                                       if self.__db['index'].startswith(key.encode('utf-8') + b'\0', i)]
+            print(f'Found {repr(key)} {len(offsets)} time{"" if len(offsets) == 1 else "s"}.') #debug
+            if len(offsets) < 1:
+                self.__warn(f'L2DB: could not find key {repr(key)}!')
+                return None
+            elif len(offsets) > 1:
+                self.__warn(f'L2DB: possibly fetching wrong value for {repr(key)}! (found {len(offsets)} occurrences)')
+            for offset in offsets[::-1]:  # Search from the last, so one before the header doesn't prematurely match
+                if self.__db['index'][offset - (16 + 3 if self.__flag('X64_INDEXES') else 8 + 3)] == 0:
+                    return offset
+
         help_funcs:dict[str, any] = locals()
         return {fn:help_funcs[fn] for fn in (which or help_funcs) if not fn in ('struct', '__builtins__')}
                 # Returns either the specified or all if 'which' tuple is falsey (empty)
@@ -375,23 +390,8 @@ class L2DB:
         Raises an L2DBKeyError if the key is not found.
         Raises an L2DBTypeError if the value cannot be converted to the specified `vtype`."""
         helpers = self.__helpers()
-        # Fetch index entry
-        #for nameoffset in self.__db['index'].finditer(key.encode('utf-8')+b'\0'):
-        #    if self.__db['index'][nameoffset-(16+3 if self.__flag('X64_INDEXES') else 8+3)] == 0:
-        #        break # Found the exact key, not just one that ends with the same.
-        offsets:list[int] = [i for i in range(len(self.__db['index']))
-                                                         if self.__db['index'].startswith(key.encode('utf-8')+b'\0', i)]
-        #nameoffset:int = self.__db['index'].find(key.encode('utf-8')+b'\0')
-        so_many = self.__db['index'].count(key.encode('utf-8') + b'\0') #debug
-        if so_many > 1:
-            self.__warn(f'L2DB.read(): possibly returning wrong value for {repr(key)}! (found {so_many} occurrences!)')
-        else:
-            print(f'Found {repr(key)} {so_many} time{"" if so_many == 1 else "s"}.')
-        #print(offsets, nameoffset) #debug
-        for offset in offsets:
-            nameoffset = offset
-            if self.__db['index'][nameoffset-(16+3 if self.__flag('X64_INDEXES') else 8+3)] == 0:
-                break
+        nameoffset = helpers['get_keyidx'](key)
+        print(f'{nameoffset=}') #debug
         entry = self.__db['index'][nameoffset-(16+3 if self.__flag('X64_INDEXES') else 8+3):nameoffset+len(key)+1]
         stored_type = self.__db['index'][nameoffset-3:nameoffset].decode('utf-8')
         # Fetch raw value
@@ -418,6 +418,8 @@ class L2DB:
             return self.convert(None, vtype, value)
         else:
             return value
+        self.__warn(f'L2DB.read(): key {repr(key)} not found!')
+        return None
 
     def write(
             self,
@@ -433,7 +435,7 @@ class L2DB:
         ##################################################################
         helpers = self.__helpers()
         # Fetch index entry
-        nameoffset = self.__db['index'].find(key.encode('utf-8') + b'\0')
+        nameoffset = helpers['get_keyidx'](key)
         entry = self.__db['index'][
                 nameoffset - (16 + 3 if self.__flag('X64_INDEXES') else 8 + 3):nameoffset + len(key) + 1]
         stored_type = self.__db['index'][nameoffset - 3:nameoffset].decode('utf-8')
