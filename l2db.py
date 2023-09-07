@@ -33,6 +33,11 @@ class L2DBError(Exception):
         self.message = message
         super().__init__(self.message)
 
+class L2DBIsDirty(L2DBError):
+    def __init__(self):
+        self.message = 'Cannot write to dirty database'
+        super().__init__(self.message)
+
 class L2DBVersionMismatch(L2DBError):
     """Raised when conversion between spec versions fails"""
     # imp_ver stands for "implemented version" in this case, not "implementation version".
@@ -292,6 +297,26 @@ class L2DB:
                 'flags': flag2flag(headerdata[5])
             }
 
+        def set_flag(flagname:str) -> bool:
+            """Set/unset a specific flag.
+            Returns True if something changed, otherwise False."""
+            match flagname[0]:
+                case '+':
+                    if self.__flag(flagname[1:]): # Flag is already set.
+                        return False
+                    else:
+                        self.__db['header'][18] += flag2flag((flagname[1:],)) # Set the flag.
+                        return True
+                case '-':
+                    if not self.__flag(flagname[1:]): # Flag is already unset.
+                        return False
+                    else:
+                        self.__db['header'][18] -= flag2flag((flagname[1:],)) # Unset the flag.
+                        return True
+                case other:
+                    self.__warn(f'L2DB helper set_flag(): invalid operand {repr(other)}! (must be plus or minus)')
+                    return False
+
         def get_keyoffset(keyname:str) -> tuple[int]:
             index_data = self.__db['index']
             entry_size = 16 if self.__flag('X64_INDEXES') else 8
@@ -399,18 +424,20 @@ class L2DB:
         """Returns the value of the key, optionally converts it to `vtype`.
         Raises an L2DBKeyError if the key is not found.
         Raises an L2DBTypeError if the value cannot be converted to the specified `vtype`."""
+        if self.__flag('DIRTY'):
+            self.__warn('L2DB.read(): Database is dirty, you may get garbage data before next cleanup!')
         helpers = self.__helpers()
         keyoffsets = helpers['get_keyoffset'](key)
-        print(f'{keyoffsets=}') #debug
+        #print(f'{keyoffsets=}') #debug
         entry = self.__db['index'][keyoffsets[0]:keyoffsets[1]]
         stored_type = self.__db['index'][keyoffsets[1]-(len(key)+1)-3:keyoffsets[1]-(len(key)+1)].decode('utf-8')
-        print(f'{stored_type=}\n{entry=}') #debug
+        #print(f'{stored_type=}\n{entry=}') #debug
         # Fetch raw value
         if self.__flag('X64_INDEXES'):
             voffsets = struct.unpack('>QQ', entry[:16])
         else:
             voffsets = struct.unpack('>II', entry[:8])
-        print(f'{voffsets=}') #debug
+        #print(f'{voffsets=}') #debug
         rawvalue = self.__db['values'][voffsets[0]:voffsets[1]]
         # Convert to usable type
         match stored_type:
@@ -421,17 +448,25 @@ class L2DB:
             case 'int'|'uin'|'flt'|'fpn':
                 value = helpers['bin2num'](rawvalue, stored_type)
             case 'bol':
-                value = bool(rawvalue[0])
+                if rawvalue==0:
+                    return False
+                elif rawvalue==1:
+                    return True
+                else:
+                    self.__warn(f'L2DB.read(): Invalidly stored boolean in key {key}!')
+                    helpers['set_flag']('+DIRTY') # Set the DIRTY flag because this is a strict implementation
+                    return True # It's a truey value, so I'll return True anyways.
             case other:
-                self.__warn(f"L2DB.read(): Invalid stored type '{other}', interpreting as raw!")
+                self.__warn(f'L2DB.read(): Unknown format {repr(other)}, interpreting as \'raw!\'')
+                helpers['set_flag']('+DIRTY') # Set the DIRTY flag
                 value = rawvalue
         # If user wants to read as another type, convert it
         if vtype:
             return self.convert(None, vtype, value)
         else:
             return value
-        self.__warn(f'L2DB.read(): key {repr(key)} not found!')
-        return None
+        toreplace = ("'", r"\'")
+        raise L2DBKeyError(f"'{key.replace(*toreplace)}' could not be found")
 
     def write(
             self,
@@ -442,20 +477,23 @@ class L2DB:
         """Writes `value` to `key`, optionally converts it to `vtype`.
         Raises an L2DBKeyError if the key name is invalid.
         Raises an L2DBTypeError if the value cannot be converted to the specified `vtype`."""
-        ##################################################################
-        # NOTE: look at L2DB.read() for locating the value, update both! #
-        ##################################################################
+        if self.__flag('DIRTY'):
+            raise L2DBIsDirty() # Refuse to write to dirty database
         helpers = self.__helpers()
         # Fetch index entry
-        nameoffset = helpers['get_keyidx'](key)
-        entry = self.__db['index'][
-                nameoffset - (16 + 3 if self.__flag('X64_INDEXES') else 8 + 3):nameoffset + len(key) + 1]
-        stored_type = self.__db['index'][nameoffset - 3:nameoffset].decode('utf-8')
+        keyoffsets = helpers['get_keyoffset'](key)
+        # print(f'{keyoffsets=}') #debug
+        entry = self.__db['index'][keyoffsets[0]:keyoffsets[1]]
+        stored_type = self.__db['index'][keyoffsets[1] - (len(key) + 1) - 3:keyoffsets[1] - (len(key) + 1)].decode(
+            'utf-8')
+        # print(f'{stored_type=}\n{entry=}') #debug
         # Fetch raw value
         if self.__flag('X64_INDEXES'):
             voffsets = struct.unpack('>QQ', entry[:16])
         else:
-            voffsets = struct.unpack('>I', entry[:8])
+            voffsets = struct.unpack('>II', entry[:8])
+        # Decide whether to write to the current data space or to move the key to the end of the DB.
+        newval =
 
     def delete(self, key:str) -> dict[str, str|int|float|bytes|bool|None]:
         """Removes a key from the L2DB."""
