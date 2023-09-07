@@ -292,20 +292,30 @@ class L2DB:
                 'flags': flag2flag(headerdata[5])
             }
 
-        def get_keyidx(key:str):
-            """Returns a key's index entry"""
-            # Fetch index entry
-            offsets: list[int] = [i for i in range(len(self.__db['index']))
-                                                       if self.__db['index'].startswith(key.encode('utf-8') + b'\0', i)]
-            print(f'Found {repr(key)} {len(offsets)} time{"" if len(offsets) == 1 else "s"}.') #debug
-            if len(offsets) < 1:
-                self.__warn(f'L2DB: could not find key {repr(key)}!')
-                return None
-            elif len(offsets) > 1:
-                self.__warn(f'L2DB: possibly fetching wrong value for {repr(key)}! (found {len(offsets)} occurrences)')
-            for offset in offsets[::-1]:  # Search from the last, so one before the header doesn't prematurely match
-                if self.__db['index'][offset - (16 + 3 if self.__flag('X64_INDEXES') else 8 + 3)] == 0:
-                    return offset
+        def get_keyoffset(keyname:str) -> tuple[int]:
+            index_data = self.__db['index']
+            entry_size = 16 if self.__flag('X64_INDEXES') else 8
+
+            name_to_find_bytes = keyname.encode('utf-8') + b'\x00'
+            offset = 0
+            while offset < len(index_data):
+                entry_name_offset = index_data.find(name_to_find_bytes, offset)
+                if entry_name_offset == -1:
+                    break
+
+                # Check if it's a valid entry by verifying the type prefix
+                entry_type_offset = entry_name_offset - 3
+                if entry_name_offset >= (entry_size + 3):
+                    entry_type = index_data[entry_type_offset:entry_type_offset + 3].decode('utf-8')
+                    if entry_type in ('raw', 'bol', 'int', 'uin', 'flt', 'fpn', 'str', 'nul', 'inv'):  # Modify as needed for other types
+                        start_offset = entry_name_offset - entry_size - 3  # Corrected calculation
+                        end_offset = entry_name_offset + len(keyname) + 1
+                        return start_offset, end_offset
+
+                offset = entry_name_offset + 1
+
+            raise KeyError(f"Entry with name '{keyname}' not found")
+
 
         help_funcs:dict[str, any] = locals()
         return {fn:help_funcs[fn] for fn in (which or help_funcs) if not fn in ('struct', '__builtins__')}
@@ -390,15 +400,17 @@ class L2DB:
         Raises an L2DBKeyError if the key is not found.
         Raises an L2DBTypeError if the value cannot be converted to the specified `vtype`."""
         helpers = self.__helpers()
-        nameoffset = helpers['get_keyidx'](key)
-        print(f'{nameoffset=}') #debug
-        entry = self.__db['index'][nameoffset-(16+3 if self.__flag('X64_INDEXES') else 8+3):nameoffset+len(key)+1]
-        stored_type = self.__db['index'][nameoffset-3:nameoffset].decode('utf-8')
+        keyoffsets = helpers['get_keyoffset'](key)
+        print(f'{keyoffsets=}') #debug
+        entry = self.__db['index'][keyoffsets[0]:keyoffsets[1]]
+        stored_type = self.__db['index'][keyoffsets[1]-(len(key)+1)-3:keyoffsets[1]-(len(key)+1)].decode('utf-8')
+        print(f'{stored_type=}\n{entry=}') #debug
         # Fetch raw value
         if self.__flag('X64_INDEXES'):
             voffsets = struct.unpack('>QQ', entry[:16])
         else:
-            voffsets = struct.unpack('>I', entry[:8])
+            voffsets = struct.unpack('>II', entry[:8])
+        print(f'{voffsets=}') #debug
         rawvalue = self.__db['values'][voffsets[0]:voffsets[1]]
         # Convert to usable type
         match stored_type:
