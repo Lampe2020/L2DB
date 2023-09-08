@@ -88,7 +88,7 @@ The data section is a pure concatenation of all values in the whole database.
 
 ## Value types
 *If implicit type conversions are done, emit a warning `Implicitly converted '{{old_type}}' to '{{new_type}}'`.   
-If a type conversion fails or isn't possible, raise a `L2DBTypeError` exception with the message `Could not assign 
+If a type conversion fails or isn't possible, raise a `L2DBTypeError` exception with the message `Could not assign
 value of type '{{val_type}}' to key of type '{{key_type}}'`, with `val_type` being the value's type Identifier (see 
 table below) and `key_type` being the key's type Identifier (see table below), optionally extend the message with 
 ` Details: {{details}}`, with `details` being any string that tries to explain the error or help to avoid it.*
