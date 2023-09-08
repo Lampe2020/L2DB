@@ -24,9 +24,6 @@ import struct, sys, semver
 NaN:float = float('NaN') # Somehow has no number literal, can only be gotten through a float of the string 'NaN'.
 Infinity:float = float('Infinity') # Same here, but here two strings ('inf' and 'infinity') are both valid for float().
 
-class L2DBWarning(Warning):
-    ...
-
 class L2DBError(Exception):
     """L2DB base exception"""
     def __init__(self, message:str='') -> None:
@@ -123,14 +120,39 @@ class L2DB:
         As an argument, supply either a tuple with the string names of the specific functions you need
         or an empty tuple to get all.
         If a non-existing function is requested a KeyError will be raised. """
-        import struct
 
-        def overwrite_in_file(path:str, offset:int, data:bytes) -> bytes:
+        def get_type(val:bytes|str|float|int|bool|None):
+            """Determine the L2DB type of any given value"""
+            match type(val).__name__:
+                case 'bytes':
+                    return 'raw'
+                case 'str':
+                    return 'str'
+                case 'float':
+                    return 'flt' # Later change the default to 'fpn', ASAP
+                case 'int':
+                    if val<=struct.unpack('>q', b'\x7f\xff\xff\xff\xff\xff\xff\xff')[0]: # Representable as signed long
+                        return 'int'
+                    else: # Not representable as signed long
+                        return 'uin'
+                case 'bool':
+                    return 'bol'
+                case 'NoneType':
+                    return 'nul'
+                case other:
+                    self.__warn(f'L2DB helper get_type(): No L2DB type for Python type {repr(other)}')
+                    return 'inv'
+
+
+        def overwrite_in_file(file:str|BufferedRandom|BufferedWriter|FileIO|BytesIO, offset:int, data:bytes) -> bytes:
             """Overwrite only `len(data)` bytes in file `path` beginning at `offset`"""
-            with open(path, 'r+b') as f:
-                f.seek(offset)  # Move the file pointer to the desired position
-                f.write(data)  # Write the new data, overwriting the existing content at that position
-            return data
+            if type(file)==str:
+                with open(file, 'r+b') as f:
+                    f.seek(offset)  # Move the file pointer to the desired position
+                    return f.write(data)  # Write the new data, overwriting the existing content at that position
+            else:
+                file.seek(offset)
+                return file.write(data)
 
         def getbit(seq:int, pos:int) -> int:
             """Get only the bit at offset `pos` from the right in number `seq`."""
@@ -318,28 +340,29 @@ class L2DB:
                     return False
 
         def get_keyoffset(keyname:str) -> tuple[int]:
-            index_data = self.__db['index']
-            entry_size = 16 if self.__flag('X64_INDEXES') else 8
+            """Retrieve an entries' start and end offset in the index.
+            Thanks to ChatGPT-3.5 for the ideas that went into this finally working function!"""
+            entry_size:int = 16 if self.__flag('X64_INDEXES') else 8
 
-            name_to_find_bytes = keyname.encode('utf-8') + b'\x00'
-            offset = 0
-            while offset < len(index_data):
-                entry_name_offset = index_data.find(name_to_find_bytes, offset)
+            name_to_find_bytes:bytes = keyname.encode('utf-8') + b'\x00'
+            offset:int = 0
+            while offset < len(self.__db['index']):
+                entry_name_offset:int = self.__db['index'].find(name_to_find_bytes, offset)
                 if entry_name_offset == -1:
                     break
 
                 # Check if it's a valid entry by verifying the type prefix
-                entry_type_offset = entry_name_offset - 3
+                entry_type_offset:int = entry_name_offset - 3
                 if entry_name_offset >= (entry_size + 3):
-                    entry_type = index_data[entry_type_offset:entry_type_offset + 3].decode('utf-8')
-                    if entry_type in ('raw', 'bol', 'int', 'uin', 'flt', 'fpn', 'str', 'nul', 'inv'):  # Modify as needed for other types
-                        start_offset = entry_name_offset - entry_size - 3  # Corrected calculation
-                        end_offset = entry_name_offset + len(keyname) + 1
+                    entry_type:str = self.__db['index'][entry_type_offset:entry_type_offset + 3].decode('utf-8')
+                    if entry_type in ('raw', 'bol', 'int', 'uin', 'flt', 'fpn', 'str', 'nul', 'inv'):
+                        start_offset:int = entry_name_offset-entry_size-3
+                        end_offset:int = entry_name_offset+len(keyname)+1
                         return start_offset, end_offset
 
                 offset = entry_name_offset + 1
 
-            raise KeyError(f"Entry with name '{keyname}' not found")
+            return -1,-1
 
 
         help_funcs:dict[str, any] = locals()
@@ -358,7 +381,8 @@ class L2DB:
             runtime_flags:tuple[str]=()
     ) -> any:
         """Populates the L2DB with new content and sets its source location if applicable.
-        Accepts modes 'r', 'w', 'f' and any combination of those three."""
+        Accepts modes 'r', 'w', 'f' and any combination of those three.
+        Note that 'w' isn't a pure write-only mode!"""
         helpers:dict[str,any] = self.__helpers()
         if type(source).__name__ in ('bytes', 'dict', 'str', 'BufferedReader', 'BufferedRandom', 'BufferedWriter'):
             if helpers['get_headerdata'](self.__db['header'])['idx_len']:
@@ -426,8 +450,19 @@ class L2DB:
         Raises an L2DBTypeError if the value cannot be converted to the specified `vtype`."""
         if self.__flag('DIRTY'):
             self.__warn('L2DB.read(): Database is dirty, you may get garbage data before next cleanup!')
-        helpers = self.__helpers()
+        if not 'r' in self.__mode:
+            raise L2DBError('L2DB.read(): database is write-only')
+        helpers:list[any] = self.__helpers()
+        if not 'f' in self.__mode:
+            index_data = self.__db['index']
+        else:
+            self.__fileref.seel(0)
+            self.__db['header'] = self.__fileref.read(64)
+            #self.__fileref.seek(64) # Should automatically happen with the read action
+            self.__db['index'] = self.__fileref.read(helpers['get_headerdata'](self.__db['header'])['idx_len'])
         keyoffsets = helpers['get_keyoffset'](key)
+        if any(i<0 for i in keyoffsets):
+            raise L2DBKeyError(key)
         #print(f'{keyoffsets=}') #debug
         entry = self.__db['index'][keyoffsets[0]:keyoffsets[1]]
         stored_type = self.__db['index'][keyoffsets[1]-(len(key)+1)-3:keyoffsets[1]-(len(key)+1)].decode('utf-8')
@@ -438,7 +473,12 @@ class L2DB:
         else:
             voffsets = struct.unpack('>II', entry[:8])
         #print(f'{voffsets=}') #debug
-        rawvalue = self.__db['values'][voffsets[0]:voffsets[1]]
+        rawvalue:bytes = b''
+        if not 'f' in self.__mode:
+            rawvalue = self.__db['values'][voffsets[0]:voffsets[1]]
+        else:
+            self.__fileref.seek(64+len(self.__db['index'])+voffsets[0]) # header + index + previous values
+            rawvalue = self.__fileref.read(voffsets[1]-voffsets[0]) # Value length
         # Convert to usable type
         match stored_type:
             case 'raw':
@@ -448,14 +488,21 @@ class L2DB:
             case 'int'|'uin'|'flt'|'fpn':
                 value = helpers['bin2num'](rawvalue, stored_type)
             case 'bol':
-                if rawvalue==0:
+                if rawvalue[0]==0:
                     return False
-                elif rawvalue==1:
+                elif rawvalue[0]==1:
                     return True
                 else:
                     self.__warn(f'L2DB.read(): Invalidly stored boolean in key {key}!')
                     helpers['set_flag']('+DIRTY') # Set the DIRTY flag because this is a strict implementation
                     return True # It's a truey value, so I'll return True anyways.
+            case 'nul':
+                if rawvalue[0]==0:
+                    return None
+                else:
+                    self.__warn(f'L2DB.read(): Invalidly stored null in key {key}!')
+                    helpers['set_flag']('+DIRTY') # Set the DIRTY flag because this is a strict implementation
+                    return None # It's of type 'nul', so I'll return None anyways.
             case other:
                 self.__warn(f'L2DB.read(): Unknown format {repr(other)}, interpreting as \'raw!\'')
                 helpers['set_flag']('+DIRTY') # Set the DIRTY flag
@@ -465,7 +512,7 @@ class L2DB:
             return self.convert(None, vtype, value)
         else:
             return value
-        toreplace = ("'", r"\'")
+        toreplace = ("'", r"\'") # Cannot use backslashes in format strings' inserts, so I do this workaround.
         raise L2DBKeyError(f"'{key.replace(*toreplace)}' could not be found")
 
     def write(
@@ -479,33 +526,119 @@ class L2DB:
         Raises an L2DBTypeError if the value cannot be converted to the specified `vtype`."""
         if self.__flag('DIRTY'):
             raise L2DBIsDirty() # Refuse to write to dirty database
+        if not 'w' in self.__mode:
+            raise L2DBError('L2DB.write(): database is read-only')
         helpers = self.__helpers()
         # Fetch index entry
         keyoffsets = helpers['get_keyoffset'](key)
-        # print(f'{keyoffsets=}') #debug
-        entry = self.__db['index'][keyoffsets[0]:keyoffsets[1]]
-        stored_type = self.__db['index'][keyoffsets[1] - (len(key) + 1) - 3:keyoffsets[1] - (len(key) + 1)].decode(
-            'utf-8')
+        if any(i<0 for i in keyoffsets):
+            keyoffsets = (
+                len(self.__db['index']),
+                (len(self.__db['index'])+(16+3 if self.__flag('X64_INDEXES') else 8+3)+len(key)+1)
+            )
+            entry:bytes = b''.join((
+                struct.pack(f'>{"QQ" if self.__flag("X64_INDEXES") else "II"}', *keyoffsets),
+                (vtype or helpers['get_type'](value)).encode('utf-8'),
+                key.encode('utf-8'),
+                b'\0'
+            ))
+        else:
+            entry:bytes = self.__db['index'][keyoffsets[0]:keyoffsets[1]]
+        stored_type:str = self.__db['index'][keyoffsets[1]-(len(key)+1)-3:keyoffsets[1]-(len(key)+1)].decode('utf-8')
         # print(f'{stored_type=}\n{entry=}') #debug
+        orig_idx_len:int = len(self.__db['index'])
         # Fetch raw value
         if self.__flag('X64_INDEXES'):
             voffsets = struct.unpack('>QQ', entry[:16])
         else:
             voffsets = struct.unpack('>II', entry[:8])
         # Decide whether to write to the current data space or to move the key to the end of the DB.
-        newval = b'' #TODO: implement this!
+        newtype = vtype or stored_type
+        if newtype!=stored_type and newtype in ('int', 'uin', 'flt', 'fpn', 'bol', 'str', 'raw', 'nul'):
+            stored_type = self.__db['index'][keyoffsets[1]-(len(key)+1)-3:keyoffsets[1]-(len(key)+1)]\
+                                                                                               = newtype.encode('utf-8')
+        valbin:bytes = b''
+        match type(value).__name__:
+            case 'bytes':
+                valbin = value
+            case 'str':
+                valbin = helpers['str2bin'](value)
+            case 'int'|'float':
+                valbin = helpers['num2bin'](value)
+            case other:
+                self.__warn(f'''L2DB.write(): Could not assign value of type {repr(other)
+                                                                                } to key of type {repr(stored_type)}''')
+
+        #TODO: Find out why it misbehaves!
+        # Add headerdata modification!
+        # Note that some of the indexes in the if block below seem to be off, also don't forget to merge the type prefix
+        #  in with the rest!
+        if len(valbin)<=voffsets[1]-voffsets[0]:
+            if not 'f' in self.__mode:
+                try:
+                    prev_val:bytes = self.__db['values'][:voffsets[0]]
+                except IndexError:
+                    prev_val:bytes = b''
+                try:
+                    aftr_val = self.__db['values'][voffsets[0]+len(valbin)]
+                except IndexError:
+                    aftr_val:bytes = b''
+                self.__db['values'] = b''.join((prev_val,valbin,aftr_val))
+                if len(valbin)<voffsets[1]-voffsets[0]: # Update the index to represent the new value length:
+                    try:
+                        prev_idx:bytes = self.__db['index'][:(64+keyoffsets[0]+8)]
+                    except IndexError:
+                        prev_idx:bytes = b''
+                    try:
+                        aftr_idx:bytes = self.__db['index'][
+                                               (64+keyoffsets[0]+(8 if self.__flag('X64_INDEXES') else 4)+len(valbin)):]
+                    except IndexError:
+                        aftr_idx:bytes = b''
+                    self.__db['index'] = b''.join((
+                        prev_idx,
+                        (struct.pack('>Q', voffsets[1]) if self.__flag('X64_INDEXES')
+                            else struct.pack('>I', voffsets[1])),
+                        aftr_idx
+                    ))
+            else:
+                self.__helpers()['overwrite_in_file'](self.__fileref, voffsets[0], valbin)
+                if len(valbin)<voffsets[1]-voffsets[0]: # Update the index to represent the new value length:
+                    if self.__flag('X64_INDEXES'):
+                        helpers['overwrite_in_file'](
+                            self.__fileref,
+                            (64+keyoffsets[0]+8),
+                            struct.pack(
+                                '>Q',
+                                (voffsets[1]-((voffsets[1]-voffsets[0])-len(valbin)))
+                            )
+                        )
+                    else:
+                        helpers['overwrite_in_file'](
+                            self.__fileref,
+                            (64+keyoffsets[0]+4),
+                            struct.pack(
+                                '>I',
+                                (voffsets[1]-((voffsets[1]-voffsets[0])-len(valbin)))
+                            )
+                        )
+
 
     def delete(self, key:str) -> dict[str, str|int|float|bytes|bool|None]:
         """Removes a key from the L2DB."""
+        ... #TODO: Implement deletion mechanism here!
 
     def convert(self, key:str, vtype:str|None, fromval:str|int|float|bytes|bool|None):
         """Converts the key or value to type `vtype`."""
+        ... #TODO: Implement converter here!
 
     def dump(self) -> dict[str, str|int|float|bytes|bool|None]:
         """Dumps all key-value pairs as a `dict`"""
+        ... #TODO: Implement dumping mechanism here!
+            # E.g. just evaluate the whole index "the old way" (the same way as L2DBv3 did)
 
     def dumpbin(self) -> bytes:
         """Dumps the whole database as a binary string"""
+        ... #TODO: Implement the dumping mechanism here!
 
     def flush(self, file:BytesIO|BufferedReader|BufferedRandom|BufferedWriter|str|None=None, move:bool=False) -> None:
         """Flushes the buffered changes to the file the database has been initialized with.
@@ -513,11 +646,18 @@ class L2DB:
         file if `move` is True.
         Raises a FileNotFoundError with the message 'No file specified' if the database has no source file and none is
         specified."""
+        ... #TODO: Implement flushing mechanism here!
+        # Ensure all contents are actually written to the file on disk.
+        if self.__fileref:
+            self.__fileref.flush()
 
     def cleanup(self, only_flag:bool=False, dont_rescue:bool=False) -> dict[str, str]:
         """Tries to repair the database and unsets the `DIRTY` flag.
         Skips all repairs if `only_flag` is True.
         Discards corrupted key-value pairs instead of rescuing them if `dont_rescue` is True."""
+        helpers = self.__helpers()
+        ... #TODO: Implement the cleamup mechanism here!
+        helpers['set_flag']('-DIRTY') # Unset the DIRTY flag.
 
 ########
 # Test #
