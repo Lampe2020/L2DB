@@ -164,7 +164,7 @@ random).
 |               | `{'key':'','val':''}` | Return value | A `dict` with the keys `key` and `val` which contains the given key and value as if they had been read from the DB |
 
 This method stores any value given to it into the database with the key provided to it.   
-If a specific type is given the values is converted to 
+If a specific type is given the variable is converted to that type.   
 
 ### `delete()`
 
