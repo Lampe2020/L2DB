@@ -87,7 +87,7 @@ class L2DB:
         self.runtime_flags:tuple = runtime_flags
         self.open(source, mode, runtime_flags)
 
-    source = property((lambda self: self.__source.copy()))
+    source = property((lambda self: self.__source.copy() if type(self.__source)==dict else self.__source))
     mode = property((lambda self: self.__mode))
 
     def __enter__(self):
@@ -109,6 +109,7 @@ class L2DB:
         self.__source = None
         self.__mode = ''
         self.__db = {'header': b'', 'index': b'', 'values': b''}
+        self.__del__() # Run the destructor manually to ensure it's run.
         if err_type: # If an error was passed to the context manager
             print(f'''\n\n[!] L2DB context manager cought an exception:\n{"".join(
                   format_exception(err_type, err_val, err_tb))}\n   --> Exception handled in L2DB context manager.\n''')
@@ -456,7 +457,7 @@ class L2DB:
         if not 'f' in self.__mode:
             index_data = self.__db['index']
         else:
-            self.__fileref.seel(0)
+            self.__fileref.seek(0)
             self.__db['header'] = self.__fileref.read(64)
             #self.__fileref.seek(64) # Should automatically happen with the read action
             self.__db['index'] = self.__fileref.read(helpers['get_headerdata'](self.__db['header'])['idx_len'])
@@ -580,9 +581,10 @@ class L2DB:
                 except IndexError:
                     prev_val:bytes = b''
                 try:
-                    aftr_val = self.__db['values'][voffsets[0]+len(valbin)]
+                    aftr_val = self.__db['values'][voffsets[0]+len(valbin):]
                 except IndexError:
                     aftr_val:bytes = b''
+                print(f'{prev_val=}\n{aftr_val=}\n{valbin=}')
                 self.__db['values'] = b''.join((prev_val,valbin,aftr_val))
                 if len(valbin)<voffsets[1]-voffsets[0]: # Update the index to represent the new value length:
                     try:
@@ -638,9 +640,13 @@ class L2DB:
 
     def dumpbin(self) -> bytes:
         """Dumps the whole database as a binary string"""
-        ... #TODO: Implement the dumping mechanism here!
+        if not 'f' in self.__mode:
+            return b''.join((self.__db['header'],self.__db['index'],self.__db['values']))
+        else:
+            self.__fileref.seek(0)
+            return self.__fileref.read() # Return the whole DB file's contents
 
-    def flush(self, file:BytesIO|BufferedReader|BufferedRandom|BufferedWriter|str|None=None, move:bool=False) -> None:
+    def flush(self, file:FileIO|BytesIO|BufferedReader|BufferedRandom|BufferedWriter|str|None=None, move:bool=False) -> None:
         """Flushes the buffered changes to the file the database has been initialized with.
         If a file is specified this flushes the changes to that file instead and changes the database source to the new
         file if `move` is True.
@@ -650,6 +656,30 @@ class L2DB:
         # Ensure all contents are actually written to the file on disk.
         if self.__fileref:
             self.__fileref.flush()
+
+    def __del__(self):
+        """Properly disposes of this L2DB instance"""
+        self.__delete__(self)
+
+    def __delete__(self, instance):
+        """Properly disposes of a deleted L2DB"""
+        instance.flush()
+        if instance.__fileref:
+            instance.__fileref.close()
+        if 'VERBOSE' in instance.runtime_flags:
+            match type(instance.source).__name__:
+                case 'str':
+                    print(f'Disposed of L2DB({repr(instance.source)}, {repr(instance.mode)})')
+                case 'bytes':
+                    print(f'Disposed of L2DB(bytes, {repr(instance.mode)})')
+                case 'FileIO'|'BufferedReader'|'BufferedRandom'|'BufferedWriter':
+                    print(f'Disposed of L2DB({repr(instance.source.name)}, {repr(instance.mode)})')
+                case 'BytesIO':
+                    print(f'Disposed of L2DB(BytesIO, {repr(instance.mode)})')
+                case 'dict':
+                    print(f'Disposed of L2DB(dict, {repr(instance.mode)})')
+                case other:
+                    print(f'Disposed of L2DB({other}, {repr(instance.mode)})')
 
     def cleanup(self, only_flag:bool=False, dont_rescue:bool=False) -> dict[str, str]:
         """Tries to repair the database and unsets the `DIRTY` flag.
