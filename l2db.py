@@ -20,7 +20,7 @@ This implementation is a strict implementation, so it follows even the rules for
 """
 
 import collections.abc as collections
-import struct, sys, semver
+import struct, sys
 NaN:float = float('NaN') # Somehow has no number literal, can only be gotten through a float of the string 'NaN'.
 Infinity:float = float('Infinity') # Same here, but here two strings ('inf' and 'infinity') are both valid for float().
 
@@ -60,9 +60,6 @@ class L2DBKeyError(L2DBError):
 ########
 # L2DB #
 ########
-
-#TODO: implement this, store internally (if buffered) as b-string with the whole db inside
-# to make it easier to implement file mode
 
 class L2DB:
     __doc__:str = f'L2DB {spec_version} in implementation {implementation_version}'
@@ -340,18 +337,42 @@ class L2DB:
                     self.__warn(f'L2DB helper set_flag(): invalid operand {repr(other)}! (must be plus or minus)')
                     return False
 
-        def get_keyoffset(keyname:str) -> tuple[int]:
+        def get_keyoffset(keyname:str, all:bool=False) -> tuple[int]|dict[str,tuple[int]]:
+            """Finds a key's index offsets by name or dumps all index entries as a nested dict"""
+            helpers = self.__helpers()
+            validx_size:int = 16 if self.__flag('X64_INDEXES') else 8
+            found_keys:dict[str,tuple[int]] = {}
+            if 'f' in self.__mode:
+                self.__fileref.seek(0)
+                self.__db['header'] = self.__fileref.read(64)
+                # Buffer the index:
+                self.__db['index'] = self.__fileref.read(helpers['get_headerdata'](self.__db['header'])['idx_len'])
+            buf:bytes = b''
+            for byte in self.__db['index']:
+                buf += bytes([byte])
+                #print(f'{buf=}') #debug
+                if len(buf)>validx_size+3 and byte==0: # Index entry end, buf should now be exactly one index entry
+                    found_keys[buf[validx_size+3:-1].decode('utf-8')] = \
+                                                struct.unpack(f'>{"II" if validx_size==8 else "QQ"}', buf[:validx_size])
+                    buf = b'' # Reset buffer
+                    if keyname in found_keys and not all:
+                        return found_keys[keyname]
+                    #TODO: Add type to little sub-dict and rewrite L2DB.read() and L2DB.write() for compatibility
+            if all:
+                return found_keys
+            else:
+                return (-1,-1)
+
+        def _get_keyoffset(keyname:str) -> tuple[int]:
             """Retrieve an entries' start and end offset in the index.
             Thanks to ChatGPT-3.5 for the ideas that went into this finally working function!"""
             entry_size:int = 16 if self.__flag('X64_INDEXES') else 8
-
             name_to_find_bytes:bytes = keyname.encode('utf-8') + b'\x00'
             offset:int = 0
             while offset < len(self.__db['index']):
                 entry_name_offset:int = self.__db['index'].find(name_to_find_bytes, offset)
                 if entry_name_offset == -1:
                     break
-
                 # Check if it's a valid entry by verifying the type prefix
                 entry_type_offset:int = entry_name_offset - 3
                 if entry_name_offset >= (entry_size + 3):
@@ -360,10 +381,12 @@ class L2DB:
                         start_offset:int = entry_name_offset-entry_size-3
                         end_offset:int = entry_name_offset+len(keyname)+1
                         return start_offset, end_offset
-
                 offset = entry_name_offset + 1
-
             return -1,-1
+
+            def checkver(imp:tuple[int],db:tuple[int]) -> tuple[bool|str]:
+                """Check the implementation vs. database version"""
+
 
 
         help_funcs:dict[str, any] = locals()
@@ -646,13 +669,39 @@ class L2DB:
             self.__fileref.seek(0)
             return self.__fileref.read() # Return the whole DB file's contents
 
-    def flush(self, file:FileIO|BytesIO|BufferedReader|BufferedRandom|BufferedWriter|str|None=None, move:bool=False) -> None:
+    def flush(self, file:FileIO|BytesIO|BufferedRandom|BufferedWriter|str|None=None, move:bool=False) -> None:
         """Flushes the buffered changes to the file the database has been initialized with.
         If a file is specified this flushes the changes to that file instead and changes the database source to the new
         file if `move` is True.
         Raises a FileNotFoundError with the message 'No file specified' if the database has no source file and none is
         specified."""
-        ... #TODO: Implement flushing mechanism here!
+        match type(file).__name__:
+            case 'FileIO'|'BytesIO'|'BufferedRandom'|'BufferedWriter':
+                if move or (not 'f' in self.__mode):
+                    file.seek(0)
+                    file.write(self.__dumpbin())
+                if move:
+                    if self.__fileref:
+                        self.__fileref.close()
+                    self.__source = file
+                    self.__fileref = file if 'f' in self.__mode else None
+            case 'str':
+                if move or (not 'f' in self.__mode):
+                    file.seek(0)
+                    file.write(self.__dumpbin())
+                if move:
+                    if self.__fileref:
+                        self.__fileref.close()
+                    self.__source = file
+                    self.__fileref = open(self.__source, 'r+b') if 'f' in self.__mode else None
+            case 'NoneType':
+                if self.__fileref:
+                    self.__fileref.seek(0)
+                    self.__fileref.write(self.dumpbin())
+            case other:
+                self.__warn(f'''L2DB.flush(): Cannot flush to target file: reference is of wrong type {
+                                                                                         repr(type(other).__name__)}''')
+
         # Ensure all contents are actually written to the file on disk.
         if self.__fileref:
             self.__fileref.flush()
