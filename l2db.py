@@ -17,10 +17,14 @@ Spec: see SPEC.md
 This module is the Python3-based example implementation of the database format, feel free to make a better 
 implementation.   
 This implementation is a strict implementation, so it follows even the rules for strict implementations.   
+
+Doesn't work as expected? Well, you can report it. But: 
+"[It's buggy. - It's software.](https://youtube.com/clip/UgkxarXos6Lwoy6Pee0i_Nyfclvf7FyxZNdY?si=5JbXE9GZlo5I3YoR)"   
 """
 
 import collections.abc as collections
 import struct, sys
+from typing import Callable # For type hints
 NaN:float = float('NaN') # Somehow has no number literal, can only be gotten through a float of the string 'NaN'.
 Infinity:float = float('Infinity') # Same here, but here two strings ('inf' and 'infinity') are both valid for float().
 
@@ -83,9 +87,17 @@ class L2DB:
         self.__mode:str = mode
         self.runtime_flags:tuple = runtime_flags
         self.open(source, mode, runtime_flags)
+        self.__deprecated = {}
+        self.__helpers()
 
     source = property((lambda self: self.__source.copy() if type(self.__source)==dict else self.__source))
     mode = property((lambda self: self.__mode))
+
+    def __deprecate(self, func:Callable) -> str:
+        """Adds a function to the deprecated list."""
+        self.__deprecated.add(func)
+        return func.__name__
+    _deprecated = property((lambda self: self.__deprecated.copy()), __deprecate)
 
     def __enter__(self):
         """Enable L2DB to be used as a Context Manager."""
@@ -383,6 +395,8 @@ class L2DB:
                         return start_offset, end_offset
                 offset = entry_name_offset + 1
             return -1,-1
+
+            self.__deprecate(_get_keyoffset) # Mark old keyoffset-getter as deprecated
 
             def checkver(imp:tuple[int],db:tuple[int]) -> tuple[bool|str]:
                 """Check the implementation vs. database version"""
