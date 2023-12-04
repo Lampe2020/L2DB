@@ -1,4 +1,4 @@
-# L2DB file format specification
+# L2DB file format and Python3 library API specification
 *If you want to make an alternative implementation of this format, use this document as a reference to ensure compatibility.*   
 - Version 2.0.0  
 - Copyright (c) by Christian Lampe <kontakt@lampe2020.de>   
