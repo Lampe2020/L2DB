@@ -182,7 +182,7 @@ If the key doesn't exist, it raises a `L2DBKeyError` exception with the key as a
 
 | Argument name | Default value |  Optional?   | Possible values                                                                               |
 |:-------------:|:-------------:|:------------:|:----------------------------------------------------------------------------------------------|
-|     `key`     |               |      No      | Any string matching a key's name or (if `fromval` is set) an empty string                     |
+|     `key`     |               |      No      | Any string matching a key's name or (if `fromval` is set) `None`                              |
 |    `vtype`    |               |      No      | Any three-letter string matching one of the type Identifiers (see [type table](#value-types)) |
 |   `fromval`   |    `None`     |     Yes      | Any value representable as one of the [L2DB-compatible types](#value-types)                   |
 |               |               | Return value | The converted value                                                                           |
@@ -194,8 +194,8 @@ If a `flt` is converted to any whole number type it simply loses its decimals (n
 whole number type is converted to `flt` it gets 0 as the only decimal place. Examples: `1.999 -> 1`, `-3.7 -> 3` and 
 `1 -> 1.0`   
 If a negative number gets converted to `uin` it loses its negativity and if a `uin` that's too large for `int` gets 
-converted to `int` it is set to 4294967295 (0xffffffff). Examples: `-3 -> 3`, `-2.9 -> 2` and `4294967296 -> 
-4294967295`.
+converted to `int` it is set to 0x7fffffffffffffff. Examples: `-3 -> 3`, `-2.9 -> 2` and `9223372036854775808 -> 
+9223372036854775807`.
 
 
 ### `dump()`
@@ -259,8 +259,6 @@ After the check the `DIRTY` flag is reset and (if the runtime-flag `verbose` is 
 
 <!-- Footnotes: -->
 
-[^1] The "version" in this case refers to a float with the whole-number part being the major version and the decimal 
-part being the minor version. As I try to follow [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html) the patch version 
-can be omitted.   
+[^1] The version number follows the [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html) standard (without support for prerelease and build suffix).   
 [^2] I chose the largest type available to keep the spec simple, implementations may choose to "compress" them if their 
 value fits into smaller types or simply a smaller type is needed.
