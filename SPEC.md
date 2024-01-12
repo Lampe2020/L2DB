@@ -37,7 +37,7 @@ string shouldn't be taken literally but instead replaced with the appropriate co
 5. [Error classes](#error-classes)
 
 ## Structure
-All integers in L2DB are little-endian (the least significant bit comes last, 
+All integers in L2DB are big-endian (the least significant bit comes last, 
 e.g. 2048 is split up into `0x08 0x00` and not `0x00 0x08`).    
 All strings in L2DB are UTF-8 encoded, with one exception: type identifiers are ASCII-encoded.   
 The file is made of three sections, which are the [header](#header) (with a length of 64 bytes), the 
